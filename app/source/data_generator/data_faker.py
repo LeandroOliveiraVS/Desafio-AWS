@@ -7,13 +7,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 class DataCreator:
-    """"
+    """
     Classe responsável por gerar dados fictícios para simular transações bancárias.
 
     Args:
         data_processamento (datetime): Data de processamento das transações.
         quantidade_contas (int, opcional): Quantidade de contas a serem geradas. Padrão é 100.
-    """"
+    """
     def __init__(self, data_processamento, quantidade_contas: int = 100):
         self.fake = Faker("pt_BR")
         self.data_processamento = data_processamento
@@ -49,7 +49,7 @@ class DataCreator:
         }
 
     def _criar_contas(self, quantidade: int = 100) -> list[dict]:
-        """"
+        """
         Cria uma lista de contas fictícias com contratos associados.
 
         Args:
@@ -57,7 +57,8 @@ class DataCreator:
 
         Returns:
             list[dict]: Lista de contas com contratos.
-        """"
+        """
+        
         # random.sample não repete números dentro desta execução.
         numeros_conta = random.sample(range(100_000_000), quantidade)
         contas = []
@@ -82,12 +83,12 @@ class DataCreator:
         return contas
 
     def gerar_registro(self) -> dict:
-        """"
+        """
         Gera um registro fictício de transação bancária.
 
         Returns:
             dict: Registro de transação com dados fictícios.
-        """"
+        """
         conta = random.choice(self.contas)
         contrato = random.choice(conta["contratos"])
 

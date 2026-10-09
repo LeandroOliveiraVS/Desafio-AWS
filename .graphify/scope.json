@@ -1,16 +1,16 @@
 {
-  "requested_mode": "all",
-  "resolved_mode": "all",
-  "source": "configured-default",
+  "requested_mode": "auto",
+  "resolved_mode": "committed",
+  "source": "default-auto",
   "root": ".",
   "git_root": ".",
-  "head": "3bf077089ce9e2dbfa2386e1b3dcd6da272feecb",
-  "candidate_count": null,
-  "included_count": 1,
-  "excluded_untracked_count": 0,
-  "excluded_ignored_count": 0,
+  "head": "3a2b6d5440a3222bb9b76b578525b8f723cc7c18",
+  "candidate_count": 11,
+  "included_count": 3,
+  "excluded_untracked_count": 1,
+  "excluded_ignored_count": 11160,
   "excluded_sensitive_count": 0,
   "missing_committed_count": 0,
   "warnings": [],
-  "recommendation": null
+  "recommendation": "Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder."
 }
