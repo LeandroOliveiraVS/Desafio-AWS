@@ -11,7 +11,7 @@ class DataCreator:
         self.fake = Faker("pt_BR")
         self.data_processamento = data_processamento
         self.quantidade_contas = quantidade_contas
-        self.contas = self._criar_contas_e_contratos(quantidade_contas)
+        self.contas = self._criar_contas(quantidade_contas)
 
         self._TIPOS_CONTRATO = [
             "CC",
@@ -41,27 +41,64 @@ class DataCreator:
             "SEGURO": "COSIF-MOCK-006",
         }
 
-    def _criar_contas_e_contratos(self, quantidade_contas: int) -> list[dict]:
-
-        # Seleção sem repetição: IDs únicos nesta execução do gerador.
-        numeros_conta = random.sample(range(500), quantidade_contas)
-
+    def _criar_contas(self, quantidade: int = 100) -> list[dict]:
+        # random.sample não repete números dentro desta execução.
+        numeros_conta = random.sample(range(100_000_000), quantidade)
         contas = []
 
         for numero in numeros_conta:
-            id_conta = f"{numero:08d}"
-            cod_agencia = str(self.fake.random_number(digits=4, fix_len=True))
-
-            contratos = [{
-                'id_contrato': str(uuid.uuid4()),
-                'tipo_contrato': random.choice(self._TIPOS_CONTRATO),
-            } for _ in range(random.randint(3, 5))]  # Cada conta terá entre 3 e 5 contratos.
+            contratos = [
+                {
+                    "id_contrato": str(uuid.uuid4()),
+                    "tipo_contrato": random.choice(self._TIPOS_CONTRATO),
+                }
+                for _ in range(random.randint(3, 5))
+            ]
 
             contas.append({
-                'id_conta': id_conta,
-                'cod_agencia': cod_agencia,
-                'contratos': contratos
+                "id_conta": f"{numero:08d}",
+                "cod_agencia": str(
+                    self.fake.random_number(digits=4, fix_len=True)
+                ),
+                "contratos": contratos,
             })
 
         return contas
-            
+
+    def gerar_registro(self) -> dict:
+        conta = random.choice(self.contas)
+        contrato = random.choice(conta["contratos"])
+
+        data_inicio = datetime.combine(
+            self.data_processamento - timedelta(days=30), time.min, tzinfo=timezone.utc
+        )
+        data_fim = datetime.combine(
+            self.data_processamento, time.max, tzinfo=timezone.utc
+        )
+
+        dt_lancamento = self.fake.date_time_between(
+            start_date=data_inicio, end_date=data_fim, tzinfo=timezone.utc
+        )
+
+        cod_cosif = self._COSIF_MOCK.get(contrato["tipo_contrato"], "COSIF-MOCK-000")
+
+        return {
+            'id_transacao': str(uuid.uuid4()),
+            'id_contrato': contrato["id_contrato"],
+            'id_conta': conta["id_conta"],
+            'cod_agencia': conta["cod_agencia"],
+            'tipo_contrato': contrato["tipo_contrato"],
+            'tipo_lancamento': random.choice(self._TIPOS_LANCAMENTO),
+            'valor_lancamento': Decimal(str(round(random.uniform(0.01, 10000.00), 2))),
+            'dt_lancamento': dt_lancamento,
+            'dt_processamento': self.data_processamento,
+            'cod_cosif': cod_cosif,
+            'flag_estorno': self.fake.boolean(chance_of_getting_true=5),
+            'id_lote': str(uuid.uuid4()),
+        }
+    
+    def gerar_registros(self, quantidade: int) -> list[dict]:
+        return [
+            self.gerar_registro()
+            for _ in range(quantidade)
+        ]
