@@ -44,7 +44,7 @@ class DataCreator:
     def _criar_contas_e_contratos(self, quantidade_contas: int) -> list[dict]:
 
         # Seleção sem repetição: IDs únicos nesta execução do gerador.
-        numeros_conta = random.sample(range(100_000_000), quantidade_contas)
+        numeros_conta = random.sample(range(500), quantidade_contas)
 
         contas = []
 
@@ -62,4 +62,6 @@ class DataCreator:
                 'cod_agencia': cod_agencia,
                 'contratos': contratos
             })
+
+        return contas
             
