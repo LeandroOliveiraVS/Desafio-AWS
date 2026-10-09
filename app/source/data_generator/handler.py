@@ -31,9 +31,9 @@ class LambdaHandler:
         "flag_estorno": pl.Boolean,
         "id_lote": pl.String,
     }
-    def __init__():
-        # TO DO: Implementar a inicialização do handler.
-        pass
+    def __init__(self):
+        self.s3 = boto3.client("s3")
+        self.bucket = os.environ['BUCKET_DESTINO']
     
 def lambda_handler(event, context):
     return LambdaHandler().executar(event or {})

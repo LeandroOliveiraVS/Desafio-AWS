@@ -9,6 +9,9 @@
 venv/
 .venv/
 
+# Ignore environment variable files
+.env
+
 # ZIP files
 *.zip
 
