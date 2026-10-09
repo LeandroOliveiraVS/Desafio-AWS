@@ -9,6 +9,8 @@
 venv/
 .venv/
 
-# Faker
-layer_faker/
-faker-layer.zip
+# ZIP files
+*.zip
+
+# Ignore AWS Lambda layers
+layers/
