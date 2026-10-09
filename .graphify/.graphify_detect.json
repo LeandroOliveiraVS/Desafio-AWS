@@ -1,20 +1,22 @@
 {
   "files": {
-    "code": [],
+    "code": [
+      "app/source/data_generator/data_faker.py"
+    ],
     "document": [],
     "paper": [],
     "image": [],
     "video": []
   },
-  "total_files": 0,
-  "total_words": 0,
+  "total_files": 1,
+  "total_words": 98,
   "needs_graph": false,
-  "warning": "Corpus is ~0 words - fits in a single context window. You may not need a graph.",
+  "warning": "Corpus is ~98 words - fits in a single context window. You may not need a graph.",
   "skipped_sensitive": [],
   "graphifyignore_patterns": 52,
   "git": {
     "source_owner": "git",
-    "source_hash": "0564489b58820e7c75c71b33714095cbb906362f",
+    "source_hash": "3bf077089ce9e2dbfa2386e1b3dcd6da272feecb",
     "branches": [
       "main"
     ],
@@ -27,9 +29,9 @@
     "source": "configured-default",
     "root": ".",
     "git_root": ".",
-    "head": "0564489b58820e7c75c71b33714095cbb906362f",
+    "head": "3bf077089ce9e2dbfa2386e1b3dcd6da272feecb",
     "candidate_count": null,
-    "included_count": 0,
+    "included_count": 1,
     "excluded_untracked_count": 0,
     "excluded_ignored_count": 0,
     "excluded_sensitive_count": 0,
