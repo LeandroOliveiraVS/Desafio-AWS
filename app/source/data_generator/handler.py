@@ -15,21 +15,21 @@ logger.setLevel(logging.INFO)
 
 class LambdaHandler:
     SCHEMA = {
-        "id_transacao": pl.String,
-        "id_contrato": pl.String,
-        "id_conta": pl.String,
-        "cod_agencia": pl.String,
-        "tipo_contrato": pl.String,
-        "tipo_lancamento": pl.String,
+        "id_transacao": pl.Utf8,
+        "id_contrato": pl.Utf8,
+        "id_conta": pl.Utf8,
+        "cod_agencia": pl.Utf8,
+        "tipo_contrato": pl.Utf8,
+        "tipo_lancamento": pl.Utf8,
         "valor_lancamento": pl.Decimal(precision=18, scale=2),
         "dt_lancamento": pl.Datetime(
             time_unit="us",
             time_zone="UTC",
         ),
         "dt_processamento": pl.Date,
-        "cod_cosif": pl.String,
+        "cod_cosif": pl.Utf8,
         "flag_estorno": pl.Boolean,
-        "id_lote": pl.String,
+        "id_lote": pl.Utf8,
     }
     def __init__(self):
         self.s3 = boto3.client("s3")
@@ -80,6 +80,9 @@ class LambdaHandler:
         data_hora_particao = self._obter_data_hora_particao(event)
         data_processamento = data_hora_particao.date()
 
+        logger.info(
+            f"Criando Contras e contratos para a data de processamento: {data_processamento}, quantidade de registros: {quantidade}"
+        )
         gerador = DataCreator(
             data_processamento= data_processamento
         )

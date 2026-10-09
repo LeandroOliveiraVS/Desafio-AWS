@@ -18,7 +18,6 @@ class DataCreator:
         self.fake = Faker("pt_BR")
         self.data_processamento = data_processamento
         self.quantidade_contas = quantidade_contas
-        self.contas = self._criar_contas(quantidade_contas)
 
         self._TIPOS_CONTRATO = [
             "CC",
@@ -47,6 +46,8 @@ class DataCreator:
             "CONSORCIO": "COSIF-MOCK-005",
             "SEGURO": "COSIF-MOCK-006",
         }
+
+        self.contas = self._criar_contas(quantidade_contas)
 
     def _criar_contas(self, quantidade: int = 100) -> list[dict]:
         """
