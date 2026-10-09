@@ -92,10 +92,10 @@ class LambdaHandler:
 
         chave = (
             f"{self.prefixo}/"
-            f"ANO/{data_hora_particao:%Y}/"
-            f"MES/{data_hora_particao:%m}/"
-            f"DIA/{data_hora_particao:%d}/"
-            f"HORA/{data_hora_particao:%H}/"
+            f"{data_hora_particao:%Y}/"
+            f"{data_hora_particao:%m}/"
+            f"{data_hora_particao:%d}/"
+            f"{data_hora_particao:%H}/"
             f"part-{uuid.uuid4()}.parquet"
         )
 
