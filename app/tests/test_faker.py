@@ -2,6 +2,15 @@ from datetime import date
 
 from app.src.data_generator.data_faker import DataCreator
 
+def test_criar_contas():
+    """Verifica que a criação de contas gera a quantidade correta de contas."""
+    gerador = DataCreator(date(2025, 2, 10), quantidade_contas=10)
+
+    assert len(gerador.contas) == 10
+    assert all(len(gerador.contas[i]['id_conta']) == 6 for i in range(10)) # cada id_conta tem 6 dígitos
+    assert all(len(gerador.contas[i]['cod_agencia']) == 4 for i in range(10)) # cada cod_agencia tem 4 dígitos
+    assert all(len(gerador.contas[i]['contratos']) >= 3 and len(gerador.contas[i]['contratos']) <= 5 for i in range(10)) # cada conta tem entre 3 e 5 contratos
+
 def test_gerar_registros():
     gerador = DataCreator(date(2025, 2, 10), quantidade_contas=10)
 
