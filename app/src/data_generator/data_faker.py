@@ -50,33 +50,32 @@ class DataCreator:
 
         self.contas = self._criar_contas(quantidade_contas)
 
-    def _criar_contas(self, quantidade: int = 1000) -> list[dict]:
+    def _criar_contas(self, 
+                      quantidade: int = 1000, 
+                      identificadores: list[tuple[str, str, str]] | None = None,) -> list[dict]:
         """
         Cria uma lista de contas fictícias com contratos associados.
 
         Args:
             quantidade (int): Quantidade de contas a serem geradas.
+            identificadores (list[tuple[str, str, str]], opcional): Lista de tuplas contendo
+                os identificadores das contas (id_conta, cod_agencia, cnpj).
         Returns:
             list[dict]: Lista de contas com contratos.
         """
 
-        if quantidade < 1 or quantidade > 9_999:
+        if identificadores is None:
+            raise ValueError("Os identificadores das contas não foram fornecidos.")
+
+        if len(identificadores) < quantidade:
             raise ValueError(
-                "A quantidade de contas deve estar entre 1 e 9999 "
-                "para gerar id_conta único de 4 dígitos."
+                f"O CSV contém {len(identificadores)} identificadores, "
+                f"mas foram solicitadas {quantidade} contas."
             )
-        
-        # random.sample não repete números dentro desta execução.
-        numeros_conta = random.sample(range(1, 1_000_000), quantidade)
+
         contas = []
 
-        identificadores = (
-            f"{numero:04d}",
-            f"{self.fake.random_number(digits=4, fix_len=True):04d}",
-            self.gerar_cnpj_unico(),
-        )
-
-        for numero in numeros_conta:
+        for id_conta, cod_agencia, cnpj in identificadores[:quantidade]:
             contratos = [
                 {
                     "id_contrato": str(uuid.uuid4()),
@@ -86,7 +85,7 @@ class DataCreator:
             ]
 
             contas.append({
-                'indentificadores': identificadores,
+                'indentificadores': (id_conta, cod_agencia, cnpj),
                 "contratos": contratos,
             })
 
