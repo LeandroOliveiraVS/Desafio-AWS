@@ -52,6 +52,29 @@ def configurar_handler(monkeypatch):
 
     return s3_falso
 
+def test_obter_data_hora_particao_converte_para_utc():
+    """Verifica que uma data com fuso horário é convertida para UTC."""
+    resultado = handler_module.LambdaHandler._obter_data_hora_particao({
+        "data_particao": "2025-02-10T14:30:00-03:00",
+    })
+
+    assert resultado == datetime(
+        2025, 2, 10, 17, 30, tzinfo=timezone.utc
+    )
+
+def test_criar_parquet():
+    """Verifica que os registros são serializados em um Parquet válido."""
+    registro = criar_registro_teste(date(2025, 2, 10))
+
+    conteudo = handler_module.LambdaHandler._criar_parquet([registro])
+    dataframe = pl.read_parquet(BytesIO(conteudo))
+
+    assert dataframe.height == 1
+    assert "cnpj" in dataframe.columns
+    assert dataframe["id_transacao"][0] == "transacao-teste-001"
+    assert dataframe["valor_lancamento"][0] == Decimal("125.50")
+    assert dataframe["dt_processamento"][0] == date(2025, 2, 10)
+
 
 def test_executar_grava_parquet_no_s3_com_particao(monkeypatch):
     s3_falso = configurar_handler(monkeypatch)
