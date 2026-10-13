@@ -8,7 +8,7 @@ from io import BytesIO
 import boto3
 import polars as pl
 
-from app.source.data_generator.data_faker import DataCreator
+from app.src.data_generator.data_faker import DataCreator
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

@@ -1,6 +1,6 @@
 from datetime import date
 
-from app.source.data_generator.data_faker import DataCreator
+from app.src.data_generator.data_faker import DataCreator
 
 def test_gerar_registros():
     gerador = DataCreator(date(2025, 2, 10), quantidade_contas=10)

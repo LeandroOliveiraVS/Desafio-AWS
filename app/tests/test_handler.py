@@ -5,7 +5,7 @@ from io import BytesIO
 import polars as pl
 import pytest
 
-from app.source.data_generator import handler as handler_module
+from app.src.data_generator import handler as handler_module
 
 
 class FakeS3:

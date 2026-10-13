@@ -1,4 +1,4 @@
-from app.source.data_generator.handler import LambdaHandler
+from app.src.data_generator.handler import LambdaHandler
 
 def lambda_handler(event, context):
     """
