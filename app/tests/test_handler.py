@@ -91,7 +91,7 @@ def test_executar_grava_parquet_no_s3_com_particao(monkeypatch):
 
     assert chamada["Bucket"] == "bucket-teste"
     assert chamada["Key"].startswith(
-        "contratos/ANO/2025/MES/02/DIA/10/HORA/14/part-"
+        "contratos/2025/02/10/14/part-"
     )
     assert chamada["Key"].endswith(".parquet")
 
