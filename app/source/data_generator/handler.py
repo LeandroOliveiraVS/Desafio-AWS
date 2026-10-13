@@ -30,6 +30,7 @@ class LambdaHandler:
         "id_transacao": pl.Utf8,
         "id_contrato": pl.Utf8,
         "id_conta": pl.Utf8,
+        "cnpj": pl.Utf8,
         "cod_agencia": pl.Utf8,
         "tipo_contrato": pl.Utf8,
         "tipo_lancamento": pl.Utf8,
