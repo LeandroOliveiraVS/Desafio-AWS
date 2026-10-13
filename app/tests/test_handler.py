@@ -77,6 +77,7 @@ def test_criar_parquet():
 
 
 def test_executar_grava_parquet_no_s3_com_particao(monkeypatch):
+    """Verifica que a função LambdaHandler executa corretamente e grava no S3."""
     s3_falso = configurar_handler(monkeypatch)
 
     class DataCreatorFalso:
@@ -124,6 +125,7 @@ def test_executar_grava_parquet_no_s3_com_particao(monkeypatch):
 
 
 def test_executar_rejeita_quantidade_zero(monkeypatch):
+    """Verifica que a função LambdaHandler rejeita quantidade de registros <= 0."""
     s3_falso = configurar_handler(monkeypatch)
     handler = handler_module.LambdaHandler()
 
