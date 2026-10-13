@@ -74,7 +74,7 @@ class DataCreator:
             ]
 
             contas.append({
-                "id_conta": f"{numero:08d}",
+                "id_conta": f"{numero:06d}",
                 "cod_agencia": str(
                     self.fake.random_number(digits=4, fix_len=True)
                 ),
