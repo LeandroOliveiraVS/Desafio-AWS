@@ -61,7 +61,7 @@ class DataCreator:
         """
         
         # random.sample não repete números dentro desta execução.
-        numeros_conta = random.sample(range(100_000_000), quantidade)
+        numeros_conta = random.sample(range(1, 1_000_000), quantidade)
         contas = []
 
         for numero in numeros_conta:

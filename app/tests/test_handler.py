@@ -24,6 +24,7 @@ def criar_registro_teste(data_processamento):
         "id_transacao": "transacao-teste-001",
         "id_contrato": "contrato-teste-001",
         "id_conta": "00001234",
+        "cnpj": "12345678901234",
         "cod_agencia": "0123",
         "tipo_contrato": "CC",
         "tipo_lancamento": "CREDITO",
