@@ -59,9 +59,8 @@ def test_executar_grava_parquet_no_s3_com_particao(monkeypatch):
     class DataCreatorFalso:
         """Gerador falso para tornar o teste previsível."""
 
-        def __init__(self, data_processamento, quantidade_contas):
+        def __init__(self, data_processamento):
             self.data_processamento = data_processamento
-            self.quantidade_contas = quantidade_contas
 
         def gerar_registros(self, quantidade):
             return [
@@ -77,7 +76,6 @@ def test_executar_grava_parquet_no_s3_com_particao(monkeypatch):
 
     resultado = handler_module.LambdaHandler().executar({
         "quantidade": 1,
-        "quantidade_contas": 2,
         "data_particao": "2025-02-10T14:30:00Z",
     })
 

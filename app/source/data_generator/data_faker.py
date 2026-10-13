@@ -18,6 +18,7 @@ class DataCreator:
         self.fake = Faker("pt_BR")
         self.data_processamento = data_processamento
         self.quantidade_contas = quantidade_contas
+        self._cnpjs_gerados: set[str] = set()
 
         self._TIPOS_CONTRATO = [
             "CC",
@@ -48,7 +49,6 @@ class DataCreator:
         }
 
         self.contas = self._criar_contas(quantidade_contas)
-        self._cnpjs_gerados: set[str] = set()
 
     def _criar_contas(self, quantidade: int = 100) -> list[dict]:
         """
