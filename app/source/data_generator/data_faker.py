@@ -47,15 +47,15 @@ class DataCreator:
             "SEGURO": "COSIF-MOCK-006",
         }
 
-        self.contas = self._criar_contas(quantidade_contas)
+        self.contas = self._criar_contas(self._criar_cnpj(), quantidade_contas)
 
-    def _criar_contas(self, quantidade: int = 100) -> list[dict]:
+    def _criar_contas(self, cnpj: str, quantidade: int = 100) -> list[dict]:
         """
         Cria uma lista de contas fictícias com contratos associados.
 
         Args:
             quantidade (int): Quantidade de contas a serem geradas.
-
+            cnpj (str): CNPJ da instituição financeira.
         Returns:
             list[dict]: Lista de contas com contratos.
         """
@@ -78,10 +78,21 @@ class DataCreator:
                 "cod_agencia": str(
                     self.fake.random_number(digits=4, fix_len=True)
                 ),
+                "cnpj": cnpj,
                 "contratos": contratos,
             })
 
         return contas
+
+    def _criar_cnpj(self) -> str:
+        """
+        Gera um CNPJ fictício.
+
+        Returns:
+            str: CNPJ no formato 'XX.XXX.XXX/0001-XX'.
+        """
+        cnpj = self.fake.cnpj()
+        return cnpj
 
     def gerar_registro(self) -> dict:
         """
