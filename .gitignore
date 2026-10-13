@@ -12,8 +12,9 @@ venv/
 # Ignore environment variable files
 .env
 
-# ZIP files
+# files
 *.zip
+*.csv
 
 # Ignore AWS Lambda layers
 layers/

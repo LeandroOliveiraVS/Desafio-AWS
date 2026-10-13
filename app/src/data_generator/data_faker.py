@@ -1,5 +1,5 @@
 from faker import Faker
-import json
+import string
 import os
 import random
 import uuid
@@ -50,7 +50,7 @@ class DataCreator:
 
         self.contas = self._criar_contas(quantidade_contas)
 
-    def _criar_contas(self, quantidade: int = 100) -> list[dict]:
+    def _criar_contas(self, quantidade: int = 1000) -> list[dict]:
         """
         Cria uma lista de contas fictícias com contratos associados.
 
@@ -59,10 +59,22 @@ class DataCreator:
         Returns:
             list[dict]: Lista de contas com contratos.
         """
+
+        if quantidade < 1 or quantidade > 9_999:
+            raise ValueError(
+                "A quantidade de contas deve estar entre 1 e 9999 "
+                "para gerar id_conta único de 4 dígitos."
+            )
         
         # random.sample não repete números dentro desta execução.
         numeros_conta = random.sample(range(1, 1_000_000), quantidade)
         contas = []
+
+        identificadores = (
+            f"{numero:04d}",
+            f"{self.fake.random_number(digits=4, fix_len=True):04d}",
+            self.gerar_cnpj_unico(),
+        )
 
         for numero in numeros_conta:
             contratos = [
@@ -74,11 +86,7 @@ class DataCreator:
             ]
 
             contas.append({
-                "id_conta": f"{numero:06d}",
-                "cod_agencia": str(
-                    self.fake.random_number(digits=4, fix_len=True)
-                ),
-                "cnpj": self.gerar_cnpj_unico(),
+                'indentificadores': identificadores,
                 "contratos": contratos,
             })
 
@@ -100,35 +108,17 @@ class DataCreator:
 
     def gerar_cnpj_unico(self) -> str:
         """
-        Gera um CNPJ numérico com dígitos verificadores válidos.
+        Gera um identificador sintético alfanumérico único de 9 caracteres.
 
-        Evita repetir CNPJs já gerados por esta instância de DataCreator.
-
-        Returns:
-            CNPJ com 14 dígitos, sem pontuação.
+        O primeiro caractere é sempre '0'. A unicidade vale para esta
+        instância de DataCreator.
         """
-        pesos_primeiro_digito = (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
-        pesos_segundo_digito = (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+        caracteres = string.ascii_uppercase + string.digits
 
         while True:
-            base = f"{random.randrange(10**12):012d}"
-
-            # Evita uma raiz composta pelo mesmo dígito repetido.
-            if len(set(base)) == 1:
-                continue
-
-            primeiro_digito = self._calcular_digito_verificador(
-                base,
-                pesos_primeiro_digito,
+            cnpj = "0" + "".join(
+                random.choices(caracteres, k=8)
             )
-            base_com_primeiro_digito = base + primeiro_digito
-
-            segundo_digito = self._calcular_digito_verificador(
-                base_com_primeiro_digito,
-                pesos_segundo_digito,
-            )
-
-            cnpj = base_com_primeiro_digito + segundo_digito
 
             if cnpj not in self._cnpjs_gerados:
                 self._cnpjs_gerados.add(cnpj)
@@ -142,6 +132,7 @@ class DataCreator:
             dict: Registro de transação com dados fictícios.
         """
         conta = random.choice(self.contas)
+        id_conta, cod_agencia, cnpj = conta["indentificadores"]
         contrato = random.choice(conta["contratos"])
 
         data_inicio = datetime.combine(
@@ -160,8 +151,9 @@ class DataCreator:
         return {
             'id_transacao': str(uuid.uuid4()),
             'id_contrato': contrato["id_contrato"],
-            'id_conta': conta["id_conta"],
-            'cod_agencia': conta["cod_agencia"],
+            'id_conta': id_conta,
+            'cod_agencia': cod_agencia,
+            'cnpj': cnpj,
             'tipo_contrato': contrato["tipo_contrato"],
             'tipo_lancamento': random.choice(self._TIPOS_LANCAMENTO),
             'valor_lancamento': Decimal(str(round(random.uniform(0.01, 10000.00), 2))),
