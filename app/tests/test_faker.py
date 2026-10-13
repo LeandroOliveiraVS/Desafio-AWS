@@ -24,3 +24,16 @@ def test_valor_lancamento_e_positivo():
     registros = gerador.gerar_registros(20)
 
     assert all(registro["valor_lancamento"] > 0 for registro in registros)
+
+def test_gerar_cnpjs_unicos():
+    gerador = DataCreator(
+        data_processamento=date(2025, 2, 10),
+        quantidade_contas=5,
+    )
+
+    cnpjs = [
+        gerador.gerar_cnpj_unico()
+        for _ in range(100)
+    ]
+
+    assert len(cnpjs) == len(set(cnpjs))
