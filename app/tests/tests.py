@@ -1,1 +1,0 @@
-from app.source.data_generator.handler import LambdaHandler
