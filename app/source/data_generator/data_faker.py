@@ -47,15 +47,15 @@ class DataCreator:
             "SEGURO": "COSIF-MOCK-006",
         }
 
-        self.contas = self._criar_contas(self._criar_cnpj(), quantidade_contas)
+        self.contas = self._criar_contas(quantidade_contas)
+        self._cnpjs_gerados: set[str] = set()
 
-    def _criar_contas(self, cnpj: str, quantidade: int = 100) -> list[dict]:
+    def _criar_contas(self, quantidade: int = 100) -> list[dict]:
         """
         Cria uma lista de contas fictícias com contratos associados.
 
         Args:
             quantidade (int): Quantidade de contas a serem geradas.
-            cnpj (str): CNPJ da instituição financeira.
         Returns:
             list[dict]: Lista de contas com contratos.
         """
@@ -78,21 +78,61 @@ class DataCreator:
                 "cod_agencia": str(
                     self.fake.random_number(digits=4, fix_len=True)
                 ),
-                "cnpj": cnpj,
+                "cnpj": self.gerar_cnpj_unico(),
                 "contratos": contratos,
             })
 
         return contas
 
-    def _criar_cnpj(self) -> str:
+    @staticmethod
+    def _calcular_digito_verificador(
+        base: str,
+        pesos: tuple[int, ...],
+    ) -> str:
+        """Calcula um dígito verificador do CNPJ."""
+        soma = sum(
+            int(digito) * peso
+            for digito, peso in zip(base, pesos)
+        )
+        resto = soma % 11
+        return str(0 if resto < 2 else 11 - resto)
+
+
+    def gerar_cnpj_unico(self) -> str:
         """
-        Gera um CNPJ fictício.
+        Gera um CNPJ numérico com dígitos verificadores válidos.
+
+        Evita repetir CNPJs já gerados por esta instância de DataCreator.
 
         Returns:
-            str: CNPJ no formato 'XX.XXX.XXX/0001-XX'.
+            CNPJ com 14 dígitos, sem pontuação.
         """
-        cnpj = self.fake.cnpj()
-        return cnpj
+        pesos_primeiro_digito = (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+        pesos_segundo_digito = (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+
+        while True:
+            base = f"{random.randrange(10**12):012d}"
+
+            # Evita uma raiz composta pelo mesmo dígito repetido.
+            if len(set(base)) == 1:
+                continue
+
+            primeiro_digito = self._calcular_digito_verificador(
+                base,
+                pesos_primeiro_digito,
+            )
+            base_com_primeiro_digito = base + primeiro_digito
+
+            segundo_digito = self._calcular_digito_verificador(
+                base_com_primeiro_digito,
+                pesos_segundo_digito,
+            )
+
+            cnpj = base_com_primeiro_digito + segundo_digito
+
+            if cnpj not in self._cnpjs_gerados:
+                self._cnpjs_gerados.add(cnpj)
+                return cnpj
 
     def gerar_registro(self) -> dict:
         """
