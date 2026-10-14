@@ -13,7 +13,13 @@ class DataCreator:
 
     Args:
         data_processamento (datetime): Data de processamento das transações.
-        quantidade_contas (int, opcional): Quantidade de contas a serem geradas. Padrão é 1000.
+        quantidade (int, opcional): Quantidade de registros a serem gerados. Padrão é 1000.
+
+    Methods:
+        carregar_contas_csv(): Lê os arquivos CSV de contas e contratos e retorna uma lista de contas fictícias.
+        gerar_registro(): Gera um registro fictício de transação bancária.
+        gerar_registros(): Gera uma lista de registros fictícios de transações bancárias.
+
     """
     def __init__(self, data_processamento, quantidade: int = 1000):
         
