@@ -4,6 +4,7 @@
 Este projeto está sendo desenvolvido como solução para um desafio de engenharia de dados.
 
 ## Estrutura
+```
 .
 ├── app/
 │   ├── src/
@@ -19,6 +20,7 @@ Este projeto está sendo desenvolvido como solução para um desafio de engenhar
 ├── .gitignore
 ├── .env
 └── README.md
+```
 
 ## Geração de dados fictícios
 A Lambda funciona como etapa de simulação da origem dos dados:
