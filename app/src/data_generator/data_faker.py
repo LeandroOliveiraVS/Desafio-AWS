@@ -15,6 +15,12 @@ class DataCreator:
         data_processamento (datetime): Data de processamento das transações.
         quantidade (int, opcional): Quantidade de registros a serem gerados. Padrão é 1000.
 
+    Attributes:
+        fake (Faker): Instância do Faker para gerar dados fictícios.
+        data_processamento (datetime): Data de processamento das transações.
+        quantidade (int): Quantidade de registros a serem gerados.
+        _contas (list[dict]): Lista de contas fictícias com contratos associados.
+
     Methods:
         carregar_contas_csv(): Lê os arquivos CSV de contas e contratos e retorna uma lista de contas fictícias.
         gerar_registro(): Gera um registro fictício de transação bancária.
