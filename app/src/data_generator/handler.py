@@ -26,6 +26,11 @@ class LambdaHandler:
         bucket (str): Nome do bucket S3 onde os arquivos Parquet serão armazenados.
         prefixo (str): Prefixo do caminho no bucket S3 onde os arquivos Parquet serão armazenados.
         identificadores (list[tuple[str, str, str]]): Lista de tuplas contendo identificadores de contas, códigos de agência e CNPJs.
+
+    Methods:
+        _obter_data_hora_particao(event: dict) -> datetime: Obtém a data e hora da partição a partir do evento Lambda.
+        _criar_parquet(registros: list[dict]) -> bytes: Converte os registros em um arquivo Parquet e retorna o conteúdo em bytes.
+        executar(event: dict) -> dict: Método principal que processa o evento Lambda, gera registros fictícios, cria o arquivo Parquet e o grava no S3.
     
     
     """
