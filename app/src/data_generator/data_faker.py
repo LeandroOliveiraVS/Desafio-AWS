@@ -174,38 +174,6 @@ class DataCreator:
 
         return contas
 
-    @staticmethod
-    def _calcular_digito_verificador(
-        base: str,
-        pesos: tuple[int, ...],
-    ) -> str:
-        """Calcula um dígito verificador do CNPJ."""
-        soma = sum(
-            int(digito) * peso
-            for digito, peso in zip(base, pesos)
-        )
-        resto = soma % 11
-        return str(0 if resto < 2 else 11 - resto)
-
-
-    def gerar_cnpj_unico(self) -> str:
-        """
-        Gera um identificador sintético alfanumérico único de 9 caracteres.
-
-        O primeiro caractere é sempre '0'. A unicidade vale para esta
-        instância de DataCreator.
-        """
-        caracteres = string.ascii_uppercase + string.digits
-
-        while True:
-            cnpj = "0" + "".join(
-                random.choices(caracteres, k=8)
-            )
-
-            if cnpj not in self._cnpjs_gerados:
-                self._cnpjs_gerados.add(cnpj)
-                return cnpj
-
     def gerar_registro(self) -> dict:
         """
         Gera um registro fictício de transação bancária.
