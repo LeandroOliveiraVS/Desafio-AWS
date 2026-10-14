@@ -22,7 +22,7 @@ Este projeto está sendo desenvolvido como solução para um desafio de engenhar
 └── README.md
 ```
 
-## Geração de dados fictícios
+## 1.Geração de dados fictícios
 A Lambda funciona como etapa de simulação da origem dos dados:
 
 - `DataCreator` lê os identificadores das contas e associa contratos fictícios.
@@ -119,8 +119,8 @@ Os registros são gravados em formato Parquet com compressão Zstandard, em um c
 <prefixo>/AAAA/MM/DD/HH/part-<uuid>.parquet
 ```
 
-## Bronze
+## 2.Bronze
 
-## Silver
+## 3.Silver
 
-## Gold
+## 4.Gold
