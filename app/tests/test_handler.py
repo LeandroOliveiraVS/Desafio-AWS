@@ -84,13 +84,14 @@ def test_executar_grava_parquet_no_s3_com_particao(monkeypatch):
     class DataCreatorFalso:
         """Gerador falso para tornar o teste previsível."""
 
-        def __init__(self, data_processamento):
+        def __init__(self, data_processamento, quantidade:int):
             self.data_processamento = data_processamento
+            self.quantidade = quantidade
 
-        def gerar_registros(self, quantidade):
+        def gerar_registros(self):
             return [
                 criar_registro_teste(self.data_processamento)
-                for _ in range(quantidade)
+                for _ in range(self.quantidade)
             ]
 
     monkeypatch.setattr(
