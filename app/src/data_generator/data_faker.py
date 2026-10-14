@@ -1,6 +1,7 @@
 from faker import Faker
 import string
 import os
+import csv
 import random
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
@@ -12,15 +13,13 @@ class DataCreator:
 
     Args:
         data_processamento (datetime): Data de processamento das transações.
-        quantidade_contas (int, opcional): Quantidade de contas a serem geradas. Padrão é 100.
+        quantidade_contas (int, opcional): Quantidade de contas a serem geradas. Padrão é 1000.
     """
-    def __init__(self, data_processamento, quantidade_contas: int = 100,
-                 identificadores: list[tuple[str, str, str]] | None = None):
+    def __init__(self, data_processamento, quantidade: int = 1000):
         
         self.fake = Faker("pt_BR")
         self.data_processamento = data_processamento
-        self.quantidade_contas = quantidade_contas
-        self.identificadores = identificadores
+        self.quantidade = quantidade
         self._cnpjs_gerados: set[str] = set()
 
         self._TIPOS_CONTRATO = [
@@ -51,46 +50,100 @@ class DataCreator:
             "SEGURO": "COSIF-MOCK-006",
         }
 
-        self.contas = self._criar_contas(identificadores=identificadores, quantidade=quantidade_contas)
+        self.contas = self._carregar_contas_csv()
 
-    def _criar_contas(self, 
-                      quantidade: int = 1000, 
-                      identificadores: list[tuple[str, str, str]] | None = None,) -> list[dict]:
+    def _carregar_contas_csv(self) -> list[dict]:
         """
-        Cria uma lista de contas fictícias com contratos associados.
+        Lê o CSV de contas e contratos localizados na mesma pasta do handler.py.
 
-        Args:
-            quantidade (int): Quantidade de contas a serem geradas.
-            identificadores (list[tuple[str, str, str]], opcional): Lista de tuplas contendo
-                os identificadores das contas (id_conta, cod_agencia, cnpj).
         Returns:
-            list[dict]: Lista de contas com contratos.
+            Lista de contas fictícias com contratos associados.
+            
+        Raises:
+            ValueError: Se o CSV não contiver os campos obrigatórios ou estiver vazio.
+
+        Example:
+            [
+                {
+                    "identificadores": [
+                        ("id_conta_1", "cod_agencia_1", "cnpj_1"),
+                        ("id_conta_2", "cod_agencia_2", "cnpj_2"),
+                        ...
+                    ],
+                    "contratos_por_conta": {
+                        "id_conta_1": [
+                            {"id_contrato": "id_contrato_1", "tipo_contrato": "tipo_contrato_1"},
+                            {"id_contrato": "id_contrato_2", "tipo_contrato": "tipo_contrato_2"},
+                        ],
+                        "id_conta_2": [
+                            {"id_contrato": "id_contrato_3", "tipo_contrato": "tipo_contrato_3"},
+                        ],
+                    }
+                }
+            ]
         """
-
-        if identificadores is None:
-            raise ValueError("Os identificadores das contas não foram fornecidos.")
-
-        if len(identificadores) < quantidade:
-            raise ValueError(
-                f"O CSV contém {len(identificadores)} identificadores, "
-                f"mas foram solicitadas {quantidade} contas."
-            )
-
         contas = []
 
-        for id_conta, cod_agencia, cnpj in identificadores[:quantidade]:
-            contratos = [
-                {
-                    "id_contrato": str(uuid.uuid4()),
-                    "tipo_contrato": random.choice(self._TIPOS_CONTRATO),
-                }
-                for _ in range(random.randint(3, 5))
-            ]
+        with open('contas.csv', 'r', newline='', encoding='utf-8-sig') as arquivo_contas:
+            leitor = csv.DictReader(arquivo_contas)
 
-            contas.append({
-                'indentificadores': (id_conta, cod_agencia, cnpj),
-                "contratos": contratos,
-            })
+            if not leitor.fieldnames:
+                raise ValueError("O CSV não contém cabeçalho.")
+
+            leitor.fieldnames = [campo.strip() for campo in leitor.fieldnames]
+            campos_obrigatorios = {"id_conta", "cod_agencia", "cnpj"}
+
+            if not campos_obrigatorios.issubset(leitor.fieldnames):
+                raise ValueError(
+                    "O CSV deve conter as colunas "
+                    "id_conta, cod_agencia e cnpj."
+                )
+
+            identificadores = []
+
+            for numero_linha, linha in enumerate(leitor, start=2):
+                id_conta = (linha.get("id_conta") or "").strip()
+                cod_agencia = (linha.get("cod_agencia") or "").strip()
+                cnpj = (linha.get("cnpj") or "").strip()
+
+                if not id_conta or not cod_agencia or not cnpj:
+                    raise ValueError(
+                        f"Campo vazio no CSV, linha {numero_linha}."
+                    )
+
+                identificadores.append((id_conta, cod_agencia, cnpj))
+        # Contratos
+        with open('contratos.csv', 'r', newline='', encoding='utf-8-sig') as arquivo_contratos:
+            leitor_contratos = csv.DictReader(arquivo_contratos)
+            contratos_por_conta = {}
+
+            for linha in leitor_contratos:
+                id_conta = (linha.get("id_conta") or "").strip()
+                id_contrato = (linha.get("id_contrato") or "").strip()
+                tipo_contrato = (linha.get("tipo_contrato") or "").strip()
+
+                if not id_conta or not id_contrato or not tipo_contrato:
+                    raise ValueError(
+                        f"Campo vazio no CSV de contratos, linha {leitor_contratos.line_num}."
+                    )
+
+                if id_conta not in contratos_por_conta:
+                    contratos_por_conta[id_conta] = []
+
+                contratos_por_conta[id_conta].append({
+                    "id_contrato": id_contrato,
+                    "tipo_contrato": tipo_contrato,
+                })
+
+        if not identificadores:
+            raise ValueError("O CSV de identificadores não contém registros.")
+        if not contratos_por_conta:
+            raise ValueError("O CSV de contratos não contém registros.")
+
+        contas.append({
+            "identificadores": identificadores,
+            "contratos": contratos_por_conta,
+        })
 
         return contas
 
@@ -166,7 +219,7 @@ class DataCreator:
             'id_lote': str(uuid.uuid4()),
         }
     
-    def gerar_registros(self, quantidade: int) -> list[dict]:
+    def gerar_registros(self) -> list[dict]:
         """
         Gera uma lista de registros fictícios de transações bancárias.
 
@@ -178,5 +231,5 @@ class DataCreator:
         """
         return [
             self.gerar_registro()
-            for _ in range(quantidade)
+            for _ in range(self.quantidade)
         ]

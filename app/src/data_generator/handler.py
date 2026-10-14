@@ -51,7 +51,6 @@ class LambdaHandler:
         self.s3 = boto3.client("s3")
         self.bucket = os.environ['BUCKET_DESTINO']
         self.prefixo = os.environ['PREFIXO_DESTINO'].strip('/')
-        self.identificadores = self._carregar_identificadores_csv()
 
     @staticmethod
     def _obter_data_hora_particao(event: dict) -> datetime:
@@ -108,62 +107,6 @@ class LambdaHandler:
 
         return buffer.getvalue()
 
-    def _carregar_identificadores_csv(self) -> list[tuple[str, str, str]]:
-        """
-        Lê o CSV localizado na mesma pasta do handler.py.
-
-        Returns:
-            Lista de tuplas contendo (id_conta, cod_agencia, cnpj).
-        """
-        nome_arquivo = os.environ.get(
-            "ARQUIVO_IDENTIFICADORES_CSV",
-            "contas.csv",
-        )
-        caminho_csv = Path(__file__).resolve().parent / nome_arquivo
-
-        if not caminho_csv.is_file():
-            raise FileNotFoundError(
-                f"Arquivo de identificadores não encontrado: {caminho_csv}"
-            )
-
-        with caminho_csv.open(
-            mode="r",
-            newline="",
-            encoding="utf-8-sig",
-        ) as arquivo:
-            leitor = csv.DictReader(arquivo)
-
-            if not leitor.fieldnames:
-                raise ValueError("O CSV não contém cabeçalho.")
-
-            leitor.fieldnames = [campo.strip() for campo in leitor.fieldnames]
-            campos_obrigatorios = {"id_conta", "cod_agencia", "cnpj"}
-
-            if not campos_obrigatorios.issubset(leitor.fieldnames):
-                raise ValueError(
-                    "O CSV deve conter as colunas "
-                    "id_conta, cod_agencia e cnpj."
-                )
-
-            identificadores = []
-
-            for numero_linha, linha in enumerate(leitor, start=2):
-                id_conta = (linha.get("id_conta") or "").strip()
-                cod_agencia = (linha.get("cod_agencia") or "").strip()
-                cnpj = (linha.get("cnpj") or "").strip()
-
-                if not id_conta or not cod_agencia or not cnpj:
-                    raise ValueError(
-                        f"Campo vazio no CSV, linha {numero_linha}."
-                    )
-
-                identificadores.append((id_conta, cod_agencia, cnpj))
-
-        if not identificadores:
-            raise ValueError("O CSV não contém registros.")
-
-        return identificadores
-
 
     def executar(self, event: dict) -> dict:
         """
@@ -193,12 +136,9 @@ class LambdaHandler:
         logger.info(
             f"Criando Contas e contratos para a data de processamento: {data_processamento}, quantidade de registros: {quantidade}"
         )
-        gerador = DataCreator(
-            data_processamento= data_processamento,
-            quantidade_contas=len(self.identificadores),
-            identificadores=self.identificadores,
-        )
-        registros = gerador.gerar_registros(quantidade=quantidade)
+        gerador = DataCreator(data_processamento= data_processamento, quantidade=quantidade)
+
+        registros = gerador.gerar_registros()
 
         logger.info("Registros gerados; criando arquivo Parquet.")
         conteudo_parquet = self._criar_parquet(registros)
