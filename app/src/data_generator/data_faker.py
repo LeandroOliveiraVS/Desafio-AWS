@@ -14,10 +14,13 @@ class DataCreator:
         data_processamento (datetime): Data de processamento das transações.
         quantidade_contas (int, opcional): Quantidade de contas a serem geradas. Padrão é 100.
     """
-    def __init__(self, data_processamento, quantidade_contas: int = 100):
+    def __init__(self, data_processamento, quantidade_contas: int = 100,
+                 identificadores: list[tuple[str, str, str]] | None = None):
+        
         self.fake = Faker("pt_BR")
         self.data_processamento = data_processamento
         self.quantidade_contas = quantidade_contas
+        self.identificadores = identificadores
         self._cnpjs_gerados: set[str] = set()
 
         self._TIPOS_CONTRATO = [
@@ -48,7 +51,7 @@ class DataCreator:
             "SEGURO": "COSIF-MOCK-006",
         }
 
-        self.contas = self._criar_contas(quantidade_contas)
+        self.contas = self._criar_contas(identificadores=identificadores, quantidade=quantidade_contas)
 
     def _criar_contas(self, 
                       quantidade: int = 1000, 
