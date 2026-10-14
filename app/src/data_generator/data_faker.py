@@ -1,6 +1,7 @@
 from faker import Faker
 import string
 import os
+from pathlib import Path
 import csv
 import random
 import uuid
@@ -96,7 +97,21 @@ class DataCreator:
         """
         contas = []
 
-        with open('contas.csv', 'r', newline='', encoding='utf-8-sig') as arquivo_contas:
+        pasta_atual = Path(__file__).resolve().parent
+        caminho_contas = pasta_atual / "contas.csv"
+        caminho_contratos = pasta_atual / "contratos.csv"
+
+        if not caminho_contas.exists():
+            raise FileNotFoundError(
+                f"Arquivo não encontrado: {caminho_contas}"
+            )
+
+        if not caminho_contratos.exists():
+            raise FileNotFoundError(
+                f"Arquivo não encontrado: {caminho_contratos}"
+            )
+
+        with open(caminho_contas, 'r', newline='', encoding='utf-8-sig') as arquivo_contas:
             leitor = csv.DictReader(arquivo_contas)
 
             if not leitor.fieldnames:
@@ -125,7 +140,7 @@ class DataCreator:
 
                 identificadores.append((id_conta, cod_agencia, cnpj))
         # Contratos
-        with open('contratos.csv', 'r', newline='', encoding='utf-8-sig') as arquivo_contratos:
+        with open(caminho_contratos, 'r', newline='', encoding='utf-8-sig') as arquivo_contratos:
             leitor_contratos = csv.DictReader(arquivo_contratos)
             contratos_por_conta = {}
 
@@ -199,8 +214,21 @@ class DataCreator:
             dict: Registro de transação com dados fictícios.
         """
         conta = random.choice(self.contas)
-        id_conta, cod_agencia, cnpj = conta["indentificadores"]
-        contrato = random.choice(conta["contratos"])
+
+        # Seleciona apenas contas que possuem ao menos um contrato associado
+        identificadores_com_contrato = [
+            identificador
+            for identificador in conta["identificadores"]
+            if identificador[0] in conta["contratos"]
+        ]
+
+        if not identificadores_com_contrato:
+            raise ValueError("Nenhuma conta possui contrato associado.")
+
+        id_conta, cod_agencia, cnpj = random.choice(identificadores_com_contrato)
+
+        # Obtém a lista de contratos daquela conta específica
+        contrato = random.choice(conta["contratos"][id_conta])
 
         data_inicio = datetime.combine(
             self.data_processamento - timedelta(days=30), time.min, tzinfo=timezone.utc
