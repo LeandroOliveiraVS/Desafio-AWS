@@ -18,6 +18,7 @@ Este projeto está sendo desenvolvido como solução para um desafio de engenhar
 │   │   ├── test_handler.py
 │   │   └── test_data_faker.py
 │   └── lambda_function.py
+├── docs/
 ├── infra/
 ├── requirements.txt
 ├── .gitignore
