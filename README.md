@@ -3,6 +3,9 @@
 ## Visão geral
 Este projeto está sendo desenvolvido como solução para um desafio de engenharia de dados.
 
+## Arquitetura
+![Architecture](docs/architecture.png)
+
 ## Estrutura
 ```
 .
