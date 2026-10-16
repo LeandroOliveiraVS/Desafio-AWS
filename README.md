@@ -123,8 +123,27 @@ Os registros são gravados em formato Parquet com compressão Zstandard, em um c
 <prefixo>/AAAA/MM/DD/HH/part-<uuid>.parquet
 ```
 
-## 2.Bronze
+## 2.Bronze (sor)
+A camada Bronze é executada no `AWS Glue` que extrai os dados fictícios gerados na etapa anterior de bucket no `S3` e salva os dados no formato `Iceberg`
+em um bucket próprio da camada bronze e no catalógo do glue. A execução é orquestrada pelo `AWS Step Functions`.
 
-## 3.Silver
+A leitura dos dados é feita via DynamicFrame e passada para Dataframe e escrita em Iceberg V3.
 
-## 4.Gold
+### Parâmetros do job Glue
+
+| Parâmetro | Exemplo | Uso |
+|---|---|---|
+| `--bucket_origem` | `<nome-do-bucket-origem>` | Bucket de origem dos Parquet. |
+| `--bucket_bronze` | `<nome-do-bucket-bronze>` | Bucket usado como warehouse da tabela Iceberg. |
+| `--datalake-formats` | `iceberg` | Habilita o formato Iceberg no job. |
+| `--conf` | Configurações Spark do Iceberg | Define extensões, catálogo, warehouse e implementação de I/O. |
+
+### Orquestração
+
+O AWS Step Functions inicia o job Bronze usando a integração síncrona do Glue (`startJobRun.sync`), aguardando a conclusão antes de encerrar a execução.
+- Se falhar, o workflow faz até duas tentativas adicionais, com intervalo de duas horas entre as tentativas.
+- Se todas as tentativas falharem, a execução do workflow termina com falha.
+
+## 3.Silver (sot)
+
+## 4.Gold (spec)
