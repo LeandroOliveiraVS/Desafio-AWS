@@ -10,7 +10,7 @@ import boto3
 import polars as pl
 import csv
 
-from app.src.data_generator.data_faker import DataCreator
+from generate_layer.app.src.data_generator.data_faker import DataCreator
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

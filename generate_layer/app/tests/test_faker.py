@@ -1,6 +1,6 @@
 from datetime import date
 import pytest
-import app.src.data_generator.data_faker as data_faker_module
+import generate_layer.app.src.data_generator.data_faker as data_faker_module
 
 @pytest.fixture
 def data_creator_e_pasta_temporaria(tmp_path, monkeypatch):

@@ -1,4 +1,4 @@
-from app.src.data_generator.handler import LambdaHandler
+from generate_layer.app.src.data_generator.handler import LambdaHandler
 
 def lambda_handler(event, context):
     """
