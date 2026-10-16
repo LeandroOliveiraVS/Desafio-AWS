@@ -127,7 +127,8 @@ Os registros são gravados em formato Parquet com compressão Zstandard, em um c
 A camada Bronze é executada no `AWS Glue` que extrai os dados fictícios gerados na etapa anterior de bucket no `S3` e salva os dados no formato `Iceberg`
 em um bucket próprio da camada bronze e no catalógo do glue. A execução é orquestrada pelo `AWS Step Functions`.
 
-A leitura dos dados é feita via DynamicFrame e passada para Dataframe e escrita em Iceberg V3.
+A leitura dos dados é feita via DynamicFrame e passada para Dataframe e escrita em Iceberg V3 e uma versão alternativa com o sufixo `_alt` é criada
+devido a incompatibilidade do Iceberg V3 com Athena.
 
 ### Parâmetros do job Glue
 
