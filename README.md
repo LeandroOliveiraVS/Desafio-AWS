@@ -9,17 +9,33 @@ Este projeto está sendo desenvolvido como solução para um desafio de engenhar
 ## Estrutura
 ```
 .
-├── app/
-│   ├── src/
-│   │   └── data_generator/
-│   │       ├── data_faker.py
-│   │       └── handler.py
-│   ├── tests/
-│   │   ├── test_handler.py
-│   │   └── test_data_faker.py
-│   └── lambda_function.py
+├── generate_layer/
+│   ├── app/
+│   │   ├── src/
+│   │   │   └── data_generator/
+│   │   │       ├── data_faker.py
+│   │   │       └── handler.py
+│   │   ├── tests/
+│   │   │   ├── test_handler.py
+│   │   │   └── test_data_faker.py
+│   │   └── lambda_function.py
+│   └── infra/
+├── sor_layer/
+│   ├── app/
+│   │   ├── src/
+│   │   └── tests/
+│   └── infra/
+├── sot_layer/
+│   ├── app/
+│   │   ├── src/
+│   │   └── tests/
+│   └── infra/
+├── spec_layer/
+│   ├── app/
+│   │   ├── src/
+│   │   └── tests/
+│   └── infra/
 ├── docs/
-├── infra/
 ├── requirements.txt
 ├── .gitignore
 ├── .env
