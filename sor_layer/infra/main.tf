@@ -28,4 +28,6 @@ data "aws_s3_bucket" "artefatos" {
 locals {
     nome_base = "${var.projeto}-sor"
     conta_id  = data.aws_caller_identity.atual.account_id
+
+    app_dir = "${path.module}/../app"
 }
