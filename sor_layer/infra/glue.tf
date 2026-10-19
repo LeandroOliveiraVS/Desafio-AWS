@@ -12,7 +12,7 @@ resource "aws_glue_job" "etl_job" {
   # 5.1 traz o Iceberg 1.10, necessário para criar tabelas format-version 3.
   glue_version      = "5.1"
   max_retries       = 0 # as retentativas ficam com o Step Functions
-  timeout           = 2880
+  timeout           = 10
   number_of_workers = 2
   worker_type       = "G.1X"
   execution_class   = "STANDARD"
