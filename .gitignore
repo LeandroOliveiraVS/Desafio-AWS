@@ -9,6 +9,8 @@
 venv/
 .venv/
 
+.vscode/
+
 # Ignore environment variable files
 .env
 
@@ -21,3 +23,10 @@ layers/
 
 .pytest_cache/
 __pycache__/
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+**/infra/build/

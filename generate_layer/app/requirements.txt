@@ -1,0 +1,4 @@
+# Dependências empacotadas na Lambda Layer (boto3 já existe no runtime).
+Faker==40.41.0
+polars==2.0.0
+polars-runtime-32==2.0.0
