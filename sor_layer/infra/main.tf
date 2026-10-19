@@ -20,6 +20,10 @@ data "aws_s3_bucket" "origem" {
 data "aws_s3_bucket" "destino" {
   bucket = var.bucket_destino
 }
+# Bucket para armazenar os scripts, querys e arquivos temporários
+data "aws_s3_bucket" "artefatos" {
+  bucket = var.bucket_artefatos
+}
 
 locals {
     nome_base = "${var.projeto}-sor"
