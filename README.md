@@ -131,6 +131,26 @@ handler.lambda_handler
 
 `quantidade` é o número de transações a gerar. A quantidade de contas disponíveis é determinada pelas linhas do CSV.
 
+### Infraestrutura (Terraform)
+
+A infraestrutura da camada fica em `generate_layer/infra/` e cria:
+
+- O bucket de destino (`desafio-aws-contratos`) já existe e é apenas referenciado, não é criado pelo Terraform.
+- Lambda Layer com `polars` e `Faker` (`generate_layer/app/requirements.txt`). O zip passa de 50 MB e por isso é publicado no prefixo `artefatos/` do bucket de destino.
+- Lambda `data-generator` (Python 3.12) com o código e os CSVs de contas/contratos, gravando em `contratos/`.
+- Agendamento no EventBridge Scheduler de segunda a sexta às 6h, 14h e 20h (`America/Sao_Paulo`), gerando `quantidade_registros` transações.
+- Roles IAM com permissão mínima (`s3:PutObject` no prefixo de saída e `lambda:InvokeFunction` para o agendamento) e log group no CloudWatch.
+
+```bash
+./generate_layer/infra/scripts/build_layer.sh   # gera infra/build/layer.zip
+cd generate_layer/infra
+terraform init
+terraform plan
+terraform apply
+```
+
+Rode o `build_layer.sh` novamente sempre que `generate_layer/app/requirements.txt` mudar. As variáveis (agendamento, quantidade, memória, etc.) estão em `variables.tf`.
+
 ### Saída no S3
 
 Os registros são gravados em formato Parquet com compressão Zstandard, em um caminho particionado por ano, mês, dia e hora UTC:
