@@ -9,8 +9,7 @@ resource "aws_glue_job" "etl_job" {
   name        = "${local.nome_base}-etl-job"
   description = "Lê os Parquet da origem e grava as tabelas Iceberg da camada Bronze."
   role_arn    = aws_iam_role.glue_job.arn
-  # 5.1 traz o Iceberg 1.10, necessário para criar tabelas format-version 3.
-  glue_version      = "5.1"
+  glue_version      = "6.0"
   max_retries       = 0 # as retentativas ficam com o Step Functions
   timeout           = 10
   number_of_workers = 2
