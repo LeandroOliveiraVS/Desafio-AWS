@@ -4,7 +4,7 @@ provider "aws" {
   default_tags {
     tags = {
       Projeto = var.projeto
-      Camada  = "generate"
+      Camada  = "sor"
       Gerido  = "terraform"
     }
   }
