@@ -21,3 +21,9 @@ variable "bucket_destino" {
   type        = string
   default     = "desafio-aws-bronze"
 }
+
+variable "bucket_artefatos" {
+  description = "Bucket S3 já existente onde os scripts são armazenados."
+  type        = string
+  default     = "desafio-aws-artefatos"
+}
