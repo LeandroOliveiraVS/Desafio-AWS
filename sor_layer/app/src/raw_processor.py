@@ -5,6 +5,31 @@ from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
 from awsglue.context import GlueContext
 from awsglue.job import Job
+from pyspark.sql.functions import col
+from pyspark.sql.types import (
+    BooleanType,
+    DateType,
+    DecimalType,
+    StringType,
+    TimestampType,
+)
+
+# Contrato de dados gerado pela camada generate_layer (LambdaHandler.SCHEMA).
+SCHEMA_CONTRATO = {
+    "id_transacao": StringType(),
+    "id_contrato": StringType(),
+    "id_conta": StringType(),
+    "cnpj": StringType(),
+    "cod_agencia": StringType(),
+    "tipo_contrato": StringType(),
+    "tipo_lancamento": StringType(),
+    "valor_lancamento": DecimalType(18, 2),
+    "dt_lancamento": TimestampType(),
+    "dt_processamento": DateType(),
+    "cod_cosif": StringType(),
+    "flag_estorno": BooleanType(),
+    "id_lote": StringType(),
+}
 
 ## @params: [JOB_NAME]
 args = getResolvedOptions(sys.argv, ['JOB_NAME', 'bucket_origem', 'bucket_bronze'])
@@ -42,10 +67,21 @@ logger.info("Leitura do DynamicFrame concluída.")
 
 df_origem = dy_origem.toDF()
 
-logger.info(
-    "Conversão para DataFrame concluída. Schema: %s",
-    df_origem.schema.simpleString(),
+print(f"Schema lido da origem: {df_origem.schema.simpleString()}")
+
+# Garante que a Bronze receba sempre as colunas e os tipos do contrato,
+# falhando com uma mensagem clara se a origem mudar.
+colunas_faltantes = set(SCHEMA_CONTRATO) - set(df_origem.columns)
+if colunas_faltantes:
+    raise ValueError(
+        f"Colunas do contrato ausentes na origem: {sorted(colunas_faltantes)}"
+    )
+
+df_origem = df_origem.select(
+    [col(nome).cast(tipo).alias(nome) for nome, tipo in SCHEMA_CONTRATO.items()]
 )
+
+print(f"Schema após aplicar o contrato: {df_origem.schema.simpleString()}")
 
 # Cria o banco de dados no Glue Data Catalog, caso ainda não exista.
 spark.sql("CREATE DATABASE IF NOT EXISTS glue_catalog.bronze")
