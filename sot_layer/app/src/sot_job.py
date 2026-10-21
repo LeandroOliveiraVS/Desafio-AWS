@@ -6,7 +6,7 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 
 ## @params: [JOB_NAME]
-args = getResolvedOptions(sys.argv, ['JOB_NAME', 'bucket_origem', 'bucket_silver'])
+args = getResolvedOptions(sys.argv, ['JOB_NAME', 'tabela_origem', 'database_destino'])
 
 sc = SparkContext()
 glueContext = GlueContext(sc)
