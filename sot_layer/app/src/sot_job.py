@@ -21,15 +21,19 @@ print('##############################')
 print('----- GLUE JOB INITIATED -----')
 print('##############################')
 
-df_bronze = SotTransform(spark).catalog_origem(args["tabela_origem"])
+sot_transform = SotTransform(spark)
 
-df_silver = SotTransform(spark).transform(df_bronze)
+df_bronze = sot_transform.catalog_origem(args["tabela_origem"])
 
-tabela_destino = f"{args['database_destino']}.transacoes"
-tabela_destino_alt = f"{args['database_destino']}.transacoes_alt"
+df_silver = sot_transform.transform(df_bronze)
 
-SotTransform(spark).gravar_tabela_iceberg(df_silver, tabela_destino, '3')
-SotTransform(spark).gravar_tabela_iceberg(df_silver, tabela_destino_alt, '2')
+sot_transform.criar_database(args['database_destino'])
+
+tabela_destino = f"glue_catalog.{args['database_destino']}.transacoes"
+tabela_destino_alt = f"glue_catalog.{args['database_destino']}.transacoes_alt"
+
+sot_transform.gravar_tabela_iceberg(df_silver, tabela_destino, '3')
+sot_transform.gravar_tabela_iceberg(df_silver, tabela_destino_alt, '2')
 
 print('##############################')
 print('------- GLUE JOB DONE -------')

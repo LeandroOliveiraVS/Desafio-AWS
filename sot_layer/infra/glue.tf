@@ -13,9 +13,9 @@ resource "aws_s3_object" "sot_transform" {
 }
 
 resource "aws_glue_job" "etl_job" {
-  name        = "${local.nome_base}-etl-job"
-  description = "Lê os Icebergs da origem e grava as tabelas Iceberg da camada Silver."
-  role_arn    = aws_iam_role.glue_job.arn
+  name              = "${local.nome_base}-etl-job"
+  description       = "Lê os Icebergs da origem e grava as tabelas Iceberg da camada Silver."
+  role_arn          = aws_iam_role.glue_job.arn
   glue_version      = "6.0"
   max_retries       = 0 # as retentativas ficam com o Step Functions
   timeout           = 10
@@ -43,7 +43,7 @@ resource "aws_glue_job" "etl_job" {
 
 
     "--extra-py-files" = "s3://${aws_s3_object.sot_transform.bucket}/${aws_s3_object.sot_transform.key}"
-    }
+  }
 
   # Configuração do Iceberg; não pode ser sobrescrita na execução.
   non_overridable_arguments = {
