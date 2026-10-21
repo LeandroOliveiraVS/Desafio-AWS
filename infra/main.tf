@@ -4,7 +4,7 @@ provider "aws" {
   default_tags {
     tags = {
       Projeto = var.projeto
-      Camada = "geral"
+      Camada  = "geral"
       Gerido  = "terraform"
     }
   }
@@ -26,7 +26,17 @@ data "aws_s3_bucket" "artefatos" {
 }
 
 locals {
-  conta_id  = data.aws_caller_identity.atual.account_id
+  conta_id = data.aws_caller_identity.atual.account_id
+
+  # Jobs Glue criados nas pastas de infra de cada camada (nome_base + "-etl-job").
+  glue_jobs = {
+    for camada in ["sor", "sot", "spec"] :
+    camada => "${var.projeto}-${camada}-etl-job"
+  }
+  glue_jobs_arn = {
+    for camada, nome in local.glue_jobs :
+    camada => "arn:aws:glue:${var.regiao}:${local.conta_id}:job/${nome}"
+  }
 
   #app_dir = "${path.module}/../app"
 }

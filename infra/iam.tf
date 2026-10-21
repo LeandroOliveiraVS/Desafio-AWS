@@ -31,7 +31,7 @@ data "aws_iam_policy_document" "step_function" {
       "glue:GetJobRuns",
       "glue:BatchStopJobRun",
     ]
-    resources = [aws_glue_job.etl_job.arn]
+    resources = values(local.glue_jobs_arn)
   }
 }
 
