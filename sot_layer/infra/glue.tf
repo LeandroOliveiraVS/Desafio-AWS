@@ -37,9 +37,10 @@ resource "aws_glue_job" "etl_job" {
     "--enable-metrics"                   = ""
     "--enable-auto-scaling"              = "false"
 
-    # Parâmetros lidos pelo raw_processor.py
-    "--bucket_origem" = data.aws_s3_bucket.origem.bucket
-    "--bucket_silver" = data.aws_s3_bucket.destino.bucket
+    # Parâmetros lidos pelo sot_job.py
+    "--tabela_origem"    = "glue_catalog.bronze.transacoes"
+    "--database_destino" = "silver"
+
 
     "--extra-py-files" = "s3://${aws_s3_object.sot_transform.bucket}/${aws_s3_object.sot_transform.key}"
     }
