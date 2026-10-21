@@ -23,9 +23,12 @@ resource "aws_iam_role" "glue_job" {
 
 data "aws_iam_policy_document" "glue_job" {
   statement {
-    sid       = "LerScript"
-    actions   = ["s3:GetObject"]
-    resources = ["${data.aws_s3_bucket.artefatos.arn}/${aws_s3_object.glue_etl_script.key}"]
+    sid     = "LerScript"
+    actions = ["s3:GetObject"]
+    resources = [
+      "${data.aws_s3_bucket.artefatos.arn}/${aws_s3_object.glue_etl_script_job.key}",
+      "${data.aws_s3_bucket.artefatos.arn}/${aws_s3_object.glue_etl_script_transform.key}",
+    ]
   }
 
   statement {
@@ -46,7 +49,7 @@ data "aws_iam_policy_document" "glue_job" {
     resources = [data.aws_s3_bucket.destino.arn, "${data.aws_s3_bucket.destino.arn}/*"]
   }
 
-  # Database `bronze` e tabelas criadas pelo raw_processor.py
+  # Database `bronze` e tabelas criadas pelo raw_processor_job.py
   statement {
     sid = "GlueCatalog"
     actions = [
