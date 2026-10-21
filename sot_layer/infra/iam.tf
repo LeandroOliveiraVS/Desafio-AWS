@@ -37,7 +37,7 @@ data "aws_iam_policy_document" "glue_job" {
   statement {
     sid       = "LerOrigem"
     actions   = ["s3:ListBucket", "s3:GetObject"]
-    resources = [data.aws_s3_bucket.origem.arn, "${data.aws_s3_bucket.origem.arn}/bronze.db/transacoes/*"]
+    resources = [data.aws_s3_bucket.origem.arn, "${data.aws_s3_bucket.origem.arn}/${var.prefixo_origem}/bronze.db/transacoes/*"]
   }
 
   # Leitura da tabela Bronze pelo catálogo Iceberg
@@ -63,7 +63,7 @@ data "aws_iam_policy_document" "glue_job" {
       "s3:PutObject",
       "s3:DeleteObject",
     ]
-    resources = [data.aws_s3_bucket.destino.arn, "${data.aws_s3_bucket.destino.arn}/*"]
+    resources = [data.aws_s3_bucket.destino.arn, "${data.aws_s3_bucket.destino.arn}/${var.prefixo_destino}/*"]
   }
 
   # Database `silver` e tabelas criadas pelo sot_job.py

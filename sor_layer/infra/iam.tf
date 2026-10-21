@@ -46,7 +46,7 @@ data "aws_iam_policy_document" "glue_job" {
       "s3:PutObject",
       "s3:DeleteObject",
     ]
-    resources = [data.aws_s3_bucket.destino.arn, "${data.aws_s3_bucket.destino.arn}/*"]
+    resources = [data.aws_s3_bucket.destino.arn, "${data.aws_s3_bucket.destino.arn}/${var.prefixo_destino}/*"]
   }
 
   # Database `bronze` e tabelas criadas pelo raw_processor_job.py

@@ -11,15 +11,27 @@ variable "projeto" {
 }
 
 variable "bucket_origem" {
-  description = "Bucket S3 já existente onde os Parquet são gravados (origem da camada Bronze)."
+  description = "Bucket S3 do data lake onde está a camada Bronze (origem da Silver)."
   type        = string
-  default     = "desafio-aws-bronze"
+  default     = "desafio-aws-datalake"
+}
+
+variable "prefixo_origem" {
+  description = "Prefixo da camada Bronze no data lake."
+  type        = string
+  default     = "bronze"
 }
 
 variable "bucket_destino" {
-  description = "Bucket S3 já existente onde os dados processados serão armazenados (destino da camada Prata)."
+  description = "Bucket S3 do data lake (criado em infra/datalake.tf)."
   type        = string
-  default     = "desafio-aws-silver"
+  default     = "desafio-aws-datalake"
+}
+
+variable "prefixo_destino" {
+  description = "Prefixo da camada Silver no data lake (warehouse das tabelas Iceberg)."
+  type        = string
+  default     = "silver"
 }
 
 variable "bucket_artefatos" {

@@ -17,7 +17,7 @@ variable "bucket_origem" {
 }
 
 variable "datalake" {
-  description = "Bucket S3 já existente onde os dados processados serão armazenados (destino da camada Prata)."
+  description = "Nome do bucket S3 do data lake, criado por este projeto (datalake.tf)."
   type        = string
   default     = "desafio-aws-datalake"
 }

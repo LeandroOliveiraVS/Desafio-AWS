@@ -60,7 +60,7 @@ resource "aws_glue_job" "etl_job" {
     "--conf" = join(" --conf ", [
       "spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
       "spark.sql.catalog.glue_catalog=org.apache.iceberg.spark.SparkCatalog",
-      "spark.sql.catalog.glue_catalog.warehouse=s3://${data.aws_s3_bucket.destino.bucket}/",
+      "spark.sql.catalog.glue_catalog.warehouse=s3://${data.aws_s3_bucket.destino.bucket}/${var.prefixo_destino}/",
       "spark.sql.catalog.glue_catalog.catalog-impl=org.apache.iceberg.aws.glue.GlueCatalog",
       "spark.sql.catalog.glue_catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO",
     ])

@@ -17,9 +17,15 @@ variable "bucket_origem" {
 }
 
 variable "bucket_destino" {
-  description = "Bucket S3 já existente onde os dados processados serão armazenados (destino da camada Prata)."
+  description = "Bucket S3 do data lake (criado em infra/datalake.tf)."
   type        = string
-  default     = "desafio-aws-bronze"
+  default     = "desafio-aws-datalake"
+}
+
+variable "prefixo_destino" {
+  description = "Prefixo da camada Bronze no data lake (warehouse das tabelas Iceberg)."
+  type        = string
+  default     = "bronze"
 }
 
 variable "bucket_artefatos" {

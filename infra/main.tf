@@ -16,10 +16,6 @@ data "aws_caller_identity" "atual" {}
 data "aws_s3_bucket" "origem" {
   bucket = var.bucket_origem
 }
-# Bucket destino dos dados processados
-data "aws_s3_bucket" "destino" {
-  bucket = var.datalake
-}
 # Bucket para armazenar os scripts, querys e arquivos temporários
 data "aws_s3_bucket" "artefatos" {
   bucket = var.bucket_artefatos

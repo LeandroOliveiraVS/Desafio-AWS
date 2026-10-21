@@ -11,15 +11,27 @@ variable "projeto" {
 }
 
 variable "bucket_origem" {
-  description = "Bucket S3 já existente da camada Silver (origem das business views)."
+  description = "Bucket S3 do data lake onde está a camada Silver (origem das business views)."
   type        = string
-  default     = "desafio-aws-silver"
+  default     = "desafio-aws-datalake"
+}
+
+variable "prefixo_origem" {
+  description = "Prefixo da camada Silver no data lake."
+  type        = string
+  default     = "silver"
 }
 
 variable "bucket_destino" {
-  description = "Bucket S3 já existente onde as business views serão armazenadas (destino da camada Gold)."
+  description = "Bucket S3 do data lake (criado em infra/datalake.tf)."
   type        = string
-  default     = "desafio-aws-gold"
+  default     = "desafio-aws-datalake"
+}
+
+variable "prefixo_destino" {
+  description = "Prefixo da camada Gold no data lake (warehouse das tabelas Iceberg)."
+  type        = string
+  default     = "gold"
 }
 
 variable "bucket_artefatos" {
