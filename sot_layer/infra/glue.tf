@@ -39,7 +39,7 @@ resource "aws_glue_job" "etl_job" {
 
     # Parâmetros lidos pelo raw_processor.py
     "--bucket_origem" = data.aws_s3_bucket.origem.bucket
-    "--bucket_bronze" = data.aws_s3_bucket.destino.bucket
+    "--bucket_silver" = data.aws_s3_bucket.destino.bucket
 
     "--extra-py-files" = "s3://${aws_s3_object.sot_transform.bucket}/${aws_s3_object.sot_transform.key}"
     }
