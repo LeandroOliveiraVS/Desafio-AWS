@@ -25,7 +25,11 @@ sot_transform = SotTransform(spark)
 
 df_bronze = sot_transform.catalog_origem(args["tabela_origem"])
 
-df_silver = sot_transform.transform(df_bronze)
+df_validos, df_rej_nulas = sot_transform.separar_chaves_nulas(df_bronze)
+df_unicos, df_rej_duplicadas = sot_transform.separar_duplicatas(df_validos)
+
+df_silver = sot_transform.transform(df_unicos)
+df_rejeitados = df_rej_nulas.unionByName(df_rej_duplicadas)
 
 sot_transform.criar_database(args['database_destino'])
 

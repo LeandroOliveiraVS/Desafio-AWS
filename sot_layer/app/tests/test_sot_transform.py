@@ -4,6 +4,8 @@ from app.src.sot_transform import SotTransform
 from pyspark.sql import functions as F
 from pyspark.sql import SparkSession
 
+from datetime import date
+
 @pytest.fixture(scope="session")
 def spark():
     """Sessão Spark local compartilhada pelos testes."""
@@ -31,3 +33,20 @@ def test_separar_chaves_nulas(spark):
         "t-2": "chave nula: id_conta",
         "t-3": "chave nula: id_conta, id_contrato",
     }
+
+def test_separar_duplicatas_mantem_o_mais_recente(spark):
+    df = spark.createDataFrame(
+        [
+            ("t-1", date(2026, 10, 20), "l-1"),
+            ("t-1", date(2026, 10, 21), "l-2"),  # mais recente: fica
+            ("t-2", date(2026, 10, 21), "l-2"),
+        ],
+        "id_transacao string, dt_processamento date, id_lote string",
+    ).withColumn("dt_lancamento", F.current_timestamp())
+
+    unicos, duplicados = SotTransform(spark).separar_duplicatas(df)
+
+    assert {(r.id_transacao, r.id_lote) for r in unicos.collect()} == {("t-1", "l-2"), ("t-2", "l-2")}
+    assert [(r.id_transacao, r.id_lote, r.motivo_rejeicao) for r in duplicados.collect()] == [
+        ("t-1", "l-1", "duplicata de id_transacao")
+    ]

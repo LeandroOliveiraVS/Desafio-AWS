@@ -1,6 +1,6 @@
 import logging
 from functools import reduce
-from pyspark.sql import DataFrame, SparkSession, functions as F
+from pyspark.sql import Window, DataFrame, SparkSession, functions as F
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -110,3 +110,29 @@ class SotTransform:
         validos = df.filter(~alguma_invalida)
         rejeitados = df.filter(alguma_invalida).withColumn("motivo_rejeicao", motivo)
         return validos, rejeitados
+
+    def separar_duplicatas(self, df: DataFrame) -> tuple[DataFrame, DataFrame]:
+        """
+        Mantém um registro por `id_transacao`, o mais recente, e separa os demais.
+
+        Returns:
+            (únicos, duplicados); os duplicados têm a coluna `motivo_rejeicao`.
+        """
+        # Ordem de preferência: processamento mais recente, depois lançamento
+        # mais recente; o id_lote só serve de desempate, para o resultado
+        # ser sempre o mesmo.
+        janela = Window.partitionBy("id_transacao").orderBy(
+            F.col("dt_processamento").desc(),
+            F.col("dt_lancamento").desc(),
+            F.col("id_lote").desc(),
+        )
+
+        df_numerado = df.withColumn("_ordem", F.row_number().over(janela))
+
+        unicos = df_numerado.filter(F.col("_ordem") == 1).drop("_ordem")
+        duplicados = (
+            df_numerado.filter(F.col("_ordem") > 1)
+            .drop("_ordem")
+            .withColumn("motivo_rejeicao", F.lit("duplicata de id_transacao"))
+        )
+        return unicos, duplicados
