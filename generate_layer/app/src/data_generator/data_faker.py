@@ -33,7 +33,7 @@ class DataCreator:
         self.fake = Faker("pt_BR")
         self.data_processamento = data_processamento
         self.quantidade = quantidade
-        self._cnpjs_gerados: set[str] = set()
+        self._id_lote = str(uuid.uuid4())
 
         self._TIPOS_CONTRATO = [
             "CC",
@@ -224,7 +224,7 @@ class DataCreator:
             'dt_processamento': self.data_processamento,
             'cod_cosif': cod_cosif,
             'flag_estorno': self.fake.boolean(chance_of_getting_true=5),
-            'id_lote': str(uuid.uuid4()),
+            'id_lote': self._id_lote
         }
     
     def gerar_registros(self) -> list[dict]:
@@ -237,7 +237,8 @@ class DataCreator:
         Returns:
             list[dict]: Lista de registros de transação com dados fictícios.
         """
+
         return [
-            self.gerar_registro()
+            self.gerar_registro
             for _ in range(self.quantidade)
         ]
