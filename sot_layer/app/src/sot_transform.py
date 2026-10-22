@@ -1,6 +1,6 @@
 import logging
-
-from pyspark.sql import DataFrame, SparkSession
+from functools import reduce
+from pyspark.sql import DataFrame, SparkSession, functions as F
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -8,7 +8,8 @@ logger.setLevel(logging.INFO)
 class SotTransform:
     def __init__(self, spark: SparkSession):
         self.spark = spark
-        self.COLUNA_PARTICAO = "dt_processamento"
+        self.COLUNA_PARTICAO = "dt_processamento" 
+        self.CHAVES_OBRIGATORIAS = ["id_transacao", "id_conta", "id_contrato", "dt_processamento"]
 
     def criar_database(self, database: str) -> None:
         """
@@ -44,7 +45,8 @@ class SotTransform:
         Returns:
             DataFrame: Dados transformados para a camada Silver.
         """
-        # TODO: implementar as transformações da Silver.
+
+
         return df
 
     def gravar_tabela_iceberg(self, df: DataFrame, tabela_destino: str, versao: str) -> None:
@@ -80,3 +82,31 @@ class SotTransform:
                 tabela_destino,
             )
             df.writeTo(tabela_destino).overwritePartitions()
+
+    def separar_chaves_nulas(self, df: DataFrame) -> tuple[DataFrame, DataFrame]:
+        """
+        Separa os registros com alguma chave obrigatória nula ou vazia.
+
+        Returns:
+            (válidos, rejeitados); os rejeitados têm a coluna `motivo_rejeicao`.
+        """
+        tipos = dict(df.dtypes)
+
+        def chave_invalida(coluna: str):
+            nula = F.col(coluna).isNull()
+            if tipos[coluna] == "string":
+                return nula | (F.trim(F.col(coluna)) == "")
+            return nula
+
+        condicoes = {c: chave_invalida(c) for c in self.CHAVES_OBRIGATORIAS}
+        alguma_invalida = reduce(lambda a, b: a | b, condicoes.values())
+
+        # Lista só as colunas com problema, por exemplo "chave nula: id_conta, id_contrato"
+        motivo = F.concat(
+            F.lit("chave nula: "),
+            F.concat_ws(", ", *[F.when(cond, F.lit(c)) for c, cond in condicoes.items()]),
+        )
+
+        validos = df.filter(~alguma_invalida)
+        rejeitados = df.filter(alguma_invalida).withColumn("motivo_rejeicao", motivo)
+        return validos, rejeitados
