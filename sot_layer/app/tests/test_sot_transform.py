@@ -1,10 +1,10 @@
 import pytest
 from decimal import Decimal
-from app.src.sot_transform import SotTransform
+from sot_layer.app.src.sot_transform import SotTransform
 from pyspark.sql import functions as F
 from pyspark.sql import SparkSession
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 @pytest.fixture(scope="session")
 def spark():
@@ -18,19 +18,6 @@ def spark():
     )
     yield sessao
     sessao.stop()
-
-@pytest.mark.parametrize(
-    "lancamento, contrato, estorno, esperado",
-    [
-        ("CREDITO", "CC", False, Decimal("10.00")),
-        ("DEBITO", "CC", False, Decimal("-10.00")),
-        ("TARIFA", "POUP", False, Decimal("-10.00")),
-        ("JUROS", "CDB", False, Decimal("10.00")),
-        ("JUROS", "CC", False, Decimal("-10.00")),
-        ("DEBITO", "CC", True, Decimal("10.00")),   # débito estornado devolve o dinheiro
-        ("JUROS", "LCI", True, Decimal("-10.00")),
-    ],
-)
 
 def test_separar_chaves_nulas(spark):
     df = spark.createDataFrame(
@@ -64,6 +51,18 @@ def test_separar_duplicatas_mantem_o_mais_recente(spark):
         ("t-1", "l-1", "duplicata de id_transacao")
     ]
 
+@pytest.mark.parametrize(
+    "lancamento, contrato, estorno, esperado",
+    [
+        ("CREDITO", "CC", False, Decimal("10.00")),
+        ("DEBITO", "CC", False, Decimal("-10.00")),
+        ("TARIFA", "POUP", False, Decimal("-10.00")),
+        ("JUROS", "CDB", False, Decimal("10.00")),
+        ("JUROS", "CC", False, Decimal("-10.00")),
+        ("DEBITO", "CC", True, Decimal("10.00")),   # débito estornado devolve o dinheiro
+        ("JUROS", "LCI", True, Decimal("-10.00")),
+    ],
+)
 def test_calcular_valor_assinado(spark, lancamento, contrato, estorno, esperado):
     df = spark.createDataFrame(
         [(lancamento, contrato, estorno, Decimal("10.00"))],
@@ -73,3 +72,89 @@ def test_calcular_valor_assinado(spark, lancamento, contrato, estorno, esperado)
     linha = SotTransform(spark).calcular_valor_assinado(df).first()
 
     assert linha.valor_assinado == esperado
+
+
+# Valores de auditoria fixos para os testes do transform.
+DT_LOAD_SOT = datetime(2026, 10, 22, 9, 0, tzinfo=timezone.utc)
+ID_EXECUCAO = "jr_teste"
+
+
+def criar_df_transform(spark, registros):
+    return spark.createDataFrame(
+        registros,
+        "tipo_contrato string, tipo_lancamento string, cod_cosif string, "
+        "flag_estorno boolean, valor_lancamento decimal(18,2), "
+        "dt_lancamento timestamp, dt_processamento date",
+    )
+
+
+def test_transform_categoria_produto(spark):
+    df = criar_df_transform(
+        spark,
+        [
+            (contrato, "CREDITO", "X", False, Decimal("1.00"),
+             datetime(2026, 10, 20, 12, tzinfo=timezone.utc), date(2026, 10, 20))
+            for contrato in [" cc", "POUP", "CDB", "LCI", "SEGURO", "CONSORCIO", "OUTRO"]
+        ],
+    )
+
+    resultado = {r.tipo_contrato: r.categoria_produto for r in SotTransform(spark).transform(df, DT_LOAD_SOT, ID_EXECUCAO).collect()}
+
+    assert resultado == {
+        "CC": "CONTA",
+        "POUP": "CONTA",
+        "CDB": "INVESTIMENTO",
+        "LCI": "INVESTIMENTO",
+        "SEGURO": "SEGURO",
+        "CONSORCIO": "CONSORCIO",
+        "OUTRO": None,
+    }
+
+
+def test_transform_ano_mes_usa_horario_de_brasilia(spark):
+    df = criar_df_transform(
+        spark,
+        [
+            # 1/11 às 01:00 UTC ainda é 31/10 às 22:00 em Brasília.
+            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+             datetime(2026, 11, 1, 1, tzinfo=timezone.utc), date(2026, 11, 1)),
+            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+             datetime(2026, 11, 1, 12, tzinfo=timezone.utc), date(2026, 11, 1)),
+        ],
+    )
+
+    resultado = [r.ano_mes for r in SotTransform(spark).transform(df, DT_LOAD_SOT, ID_EXECUCAO).orderBy("dt_lancamento").collect()]
+
+    assert resultado == ["2026-10", "2026-11"]
+
+
+def test_transform_dias_ate_processamento(spark):
+    df = criar_df_transform(
+        spark,
+        [
+            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+             datetime(2026, 9, 20, 0, tzinfo=timezone.utc), date(2026, 10, 20)),
+            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+             datetime(2026, 10, 20, 23, 59, tzinfo=timezone.utc), date(2026, 10, 20)),
+        ],
+    )
+
+    resultado = [r.dias_ate_processamento for r in SotTransform(spark).transform(df, DT_LOAD_SOT, ID_EXECUCAO).orderBy("dt_lancamento").collect()]
+
+    assert resultado == [30, 0]
+
+def test_transform_auditoria(spark):
+    df = criar_df_transform(
+        spark,
+        [
+            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+             datetime(2026, 10, 20, 12, tzinfo=timezone.utc), date(2026, 10, 20)),
+        ],
+    )
+
+    linha = SotTransform(spark).transform(df, DT_LOAD_SOT, ID_EXECUCAO).first()
+
+    assert linha.id_execucao == ID_EXECUCAO
+    # O collect() devolve o horário no fuso da máquina; convertendo para UTC,
+    # a comparação funciona em qualquer computador.
+    assert linha.dt_load_sot.astimezone(timezone.utc) == DT_LOAD_SOT

@@ -2,6 +2,7 @@ import logging
 from functools import reduce
 from pyspark.sql import Window, DataFrame, SparkSession, functions as F
 from pyspark.sql.types import DecimalType
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -15,6 +16,16 @@ class SotTransform:
         self.NATUREZA_LANCAMENTO = {"CREDITO": 1, "DEBITO": -1, "TARIFA": -1, "IOF": -1}
         # Contratos em que JUROS é rendimento pago ao cliente; nos demais, é cobrança.
         self.CONTRATOS_JUROS_CREDITADOS = ["POUP", "CDB", "LCI"]
+        self.CATEGORIA_PRODUTO = {
+            "CC": "CONTA",
+            "POUP": "CONTA",
+            "CDB": "INVESTIMENTO",
+            "LCI": "INVESTIMENTO",
+            "SEGURO": "SEGURO",
+            "CONSORCIO": "CONSORCIO",
+        }
+        # Fuso usado no ano_mes; considera a sessão Spark em UTC (padrão do Glue).
+        self.FUSO_HORARIO = "America/Sao_Paulo"
 
     def criar_database(self, database: str) -> None:
         """
@@ -40,7 +51,7 @@ class SotTransform:
         df = self.spark.table(tabela_origem)
         return df
 
-    def transform(self, df: DataFrame) -> DataFrame:
+    def transform(self, df: DataFrame, dt_load_sot: datetime, id_execucao: str) -> DataFrame:
         """
         Aplica as transformações da camada Silver.
 
@@ -55,6 +66,29 @@ class SotTransform:
             df.withColumn("tipo_contrato", F.trim(F.upper(F.col("tipo_contrato"))))
             .withColumn("tipo_lancamento", F.trim(F.upper(F.col("tipo_lancamento"))))
             .withColumn("cod_cosif", F.trim(F.upper(F.col("cod_cosif"))))
+        )
+
+        # Contrato sem categoria mapeada fica com categoria nula.
+        mapa_categoria = F.create_map(
+            *[F.lit(valor) for par in self.CATEGORIA_PRODUTO.items() for valor in par]
+        )
+
+        df = (
+            df.withColumn("categoria_produto", mapa_categoria[F.col("tipo_contrato")])
+            # Mês do lançamento no horário de Brasília, como "2026-10".
+            .withColumn(
+                "ano_mes",
+                F.date_format(
+                    F.from_utc_timestamp(F.col("dt_lancamento"), self.FUSO_HORARIO), "yyyy-MM"
+                ),
+            )
+            # dt_processamento é definido em UTC, então a comparação também usa UTC.
+            .withColumn(
+                "dias_ate_processamento",
+                F.datediff(F.col("dt_processamento"), F.to_date(F.col("dt_lancamento"))),
+            )
+            .withColumn("dt_load_sot", F.lit(dt_load_sot).cast("timestamp"))
+            .withColumn("id_execucao", F.lit(id_execucao))
         )
 
         return self.calcular_valor_assinado(df)
