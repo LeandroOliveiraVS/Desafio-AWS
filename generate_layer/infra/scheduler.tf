@@ -16,6 +16,7 @@ resource "aws_scheduler_schedule" "data_generator" {
     # Sem `data_particao`, a Lambda usa a data/hora UTC da execução.
     input = jsonencode({
       quantidade = var.quantidade_registros
+      taxa_erros = var.taxa_erros
     })
 
     retry_policy {

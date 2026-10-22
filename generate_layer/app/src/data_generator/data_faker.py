@@ -28,12 +28,20 @@ class DataCreator:
         gerar_registros(): Gera uma lista de registros fictícios de transações bancárias.
 
     """
-    def __init__(self, data_processamento, quantidade: int = 1000):
-        
+    def __init__(self, data_processamento, quantidade: int = 1000, taxa_erros: float = 0.0):
+
+        if not 0 <= taxa_erros <= 1:
+            raise ValueError("A taxa de erros deve estar entre 0 e 1.")
+
         self.fake = Faker("pt_BR")
         self.data_processamento = data_processamento
         self.quantidade = quantidade
         self._id_lote = str(uuid.uuid4())
+
+        # Erros injetados de propósito para exercitar a quarentena da Silver.
+        self.taxa_erros = taxa_erros
+        self.erros_injetados = {"chave_nula": 0, "duplicado": 0}
+        self._CAMPOS_ANULAVEIS = ["id_transacao", "id_conta", "id_contrato"]
 
         self._TIPOS_CONTRATO = [
             "CC",
@@ -234,11 +242,38 @@ class DataCreator:
         Args:
             quantidade (int): Quantidade de registros a serem gerados.
 
+        Com `taxa_erros` > 0, parte dos registros é gerada com erro proposital
+        (chave nula ou duplicata); a quantidade total de registros não muda.
+
         Returns:
             list[dict]: Lista de registros de transação com dados fictícios.
         """
+        registros = []
 
-        return [
-            self.gerar_registro
-            for _ in range(self.quantidade)
-        ]
+        for _ in range(self.quantidade):
+            registro = self.gerar_registro()
+            if random.random() < self.taxa_erros:
+                registro = self._injetar_erro(registro, registros)
+            registros.append(registro)
+
+        return registros
+
+    def _injetar_erro(self, registro: dict, anteriores: list[dict]) -> dict:
+        """
+        Troca o registro por uma cópia de um registro anterior (duplicata) ou
+        anula uma de suas chaves.
+
+        Args:
+            registro: Registro recém-gerado.
+            anteriores: Registros já gerados no lote, usados para duplicar.
+
+        Returns:
+            dict: Registro com o erro aplicado.
+        """
+        # O primeiro registro do lote não tem o que duplicar.
+        if anteriores and random.random() < 0.5:
+            self.erros_injetados["duplicado"] += 1
+            return dict(random.choice(anteriores))
+
+        self.erros_injetados["chave_nula"] += 1
+        return {**registro, random.choice(self._CAMPOS_ANULAVEIS): None}

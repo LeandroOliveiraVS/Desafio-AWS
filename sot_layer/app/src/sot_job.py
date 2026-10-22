@@ -8,7 +8,7 @@ from awsglue.job import Job
 from sot_transform import SotTransform
 
 ## @params: [JOB_NAME]
-args = getResolvedOptions(sys.argv, ['JOB_NAME', 'JOB_RUN_ID', 'tabela_origem', 'database_destino'])
+args = getResolvedOptions(sys.argv, ['JOB_NAME', 'tabela_origem', 'database_destino'])
 
 sc = SparkContext()
 glueContext = GlueContext(sc)

@@ -1,3 +1,4 @@
+import random
 from datetime import date
 import pytest
 import generate_layer.app.src.data_generator.data_faker as data_faker_module
@@ -112,3 +113,50 @@ def test_gerar_registro_unico():
     assert "cod_cosif" in registro
     assert "flag_estorno" in registro
     assert "id_lote" in registro
+
+
+def test_sem_taxa_de_erros_nao_ha_nulos_nem_duplicatas():
+    gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=50)
+
+    registros = gerador.gerar_registros()
+    ids = [registro["id_transacao"] for registro in registros]
+
+    assert None not in ids
+    assert len(ids) == len(set(ids))
+    assert gerador.erros_injetados == {"chave_nula": 0, "duplicado": 0}
+
+
+def test_taxa_de_erros_total_injeta_nulos_e_duplicatas():
+    random.seed(42)
+    gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=200, taxa_erros=1.0)
+
+    registros = gerador.gerar_registros()
+
+    # A quantidade não muda: os erros substituem registros, não acrescentam.
+    assert len(registros) == 200
+    assert sum(gerador.erros_injetados.values()) == 200
+
+    com_chave_nula = [
+        r for r in registros
+        if None in (r["id_transacao"], r["id_conta"], r["id_contrato"])
+    ]
+    ids_preenchidos = [r["id_transacao"] for r in registros if r["id_transacao"] is not None]
+    duplicatas = len(ids_preenchidos) - len(set(ids_preenchidos))
+
+    assert len(com_chave_nula) > 0
+    assert duplicatas > 0
+
+
+def test_primeiro_registro_com_erro_e_chave_nula():
+    """O primeiro registro não tem registro anterior para duplicar."""
+    gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=1, taxa_erros=1.0)
+
+    gerador.gerar_registros()
+
+    assert gerador.erros_injetados == {"chave_nula": 1, "duplicado": 0}
+
+
+@pytest.mark.parametrize("taxa", [-0.1, 1.5])
+def test_taxa_de_erros_invalida(taxa):
+    with pytest.raises(ValueError, match="taxa de erros"):
+        data_faker_module.DataCreator(date(2025, 2, 10), quantidade=1, taxa_erros=taxa)

@@ -34,6 +34,17 @@ variable "quantidade_registros" {
   default     = 1000
 }
 
+variable "taxa_erros" {
+  description = "Fração (0 a 1) dos registros gerados com erro proposital (chave nula ou duplicata) a cada execução agendada."
+  type        = number
+  default     = 0.02
+
+  validation {
+    condition     = var.taxa_erros >= 0 && var.taxa_erros <= 1
+    error_message = "A taxa_erros deve estar entre 0 e 1."
+  }
+}
+
 variable "agendamento" {
   description = "Expressão do EventBridge Scheduler (rate ou cron) que dispara a Lambda."
   type        = string

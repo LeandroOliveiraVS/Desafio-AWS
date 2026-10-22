@@ -122,6 +122,8 @@ class LambdaHandler:
                 - `quantidade`: quantidade de registros a gerar; padrão 1000.
                 - `quantidade_contas`: contas fictícias a criar; padrão 100.
                 - `data_particao`: data/hora ISO opcional para a partição.
+                - `taxa_erros`: fração (0 a 1) de registros gerados com erro
+                  proposital (chave nula ou duplicata); padrão 0.
 
         Returns:
             Dicionário com o status da operação e a localização do arquivo no S3.
@@ -135,15 +137,24 @@ class LambdaHandler:
         if quantidade < 1:
             raise ValueError("A quantidade de registros deve ser maior que zero.")
 
+        taxa_erros = float(event.get("taxa_erros", 0))
+
         data_hora_particao = self._obter_data_hora_particao(event)
         data_processamento = data_hora_particao.date()
 
         logger.info(
             f"Criando Contas e contratos para a data de processamento: {data_processamento}, quantidade de registros: {quantidade}"
         )
-        gerador = DataCreator(data_processamento= data_processamento, quantidade=quantidade)
+        gerador = DataCreator(
+            data_processamento=data_processamento,
+            quantidade=quantidade,
+            taxa_erros=taxa_erros,
+        )
 
         registros = gerador.gerar_registros()
+
+        if taxa_erros:
+            logger.info("Erros injetados no lote: %s", gerador.erros_injetados)
 
         logger.info("Registros gerados; criando arquivo Parquet.")
         conteudo_parquet = self._criar_parquet(registros)
@@ -176,5 +187,6 @@ class LambdaHandler:
             "bucket": self.bucket,
             "chave": chave,
             "formato": "parquet",
+            "erros_injetados": gerador.erros_injetados,
         }
 
