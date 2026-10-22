@@ -1,4 +1,21 @@
+import pytest
+
 from app.src.sot_transform import SotTransform
+from pyspark.sql import functions as F
+from pyspark.sql import SparkSession
+
+@pytest.fixture(scope="session")
+def spark():
+    """Sessão Spark local compartilhada pelos testes."""
+    sessao = (
+        SparkSession.builder.master("local[1]")
+        .appName("testes-raw-transformacoes")
+        .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.ui.enabled", "false")
+        .getOrCreate()
+    )
+    yield sessao
+    sessao.stop()
 
 def test_separar_chaves_nulas(spark):
     df = spark.createDataFrame(
