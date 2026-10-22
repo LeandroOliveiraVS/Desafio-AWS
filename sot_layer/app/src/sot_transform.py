@@ -1,6 +1,7 @@
 import logging
 from functools import reduce
 from pyspark.sql import Window, DataFrame, SparkSession, functions as F
+from pyspark.sql.types import DecimalType
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -10,6 +11,10 @@ class SotTransform:
         self.spark = spark
         self.COLUNA_PARTICAO = "dt_processamento" 
         self.CHAVES_OBRIGATORIAS = ["id_transacao", "id_conta", "id_contrato", "dt_processamento"]
+        # Valores negativos são cobrança.
+        self.NATUREZA_LANCAMENTO = {"CREDITO": 1, "DEBITO": -1, "TARIFA": -1, "IOF": -1}
+        # Contratos em que JUROS é rendimento pago ao cliente; nos demais, é cobrança.
+        self.CONTRATOS_JUROS_CREDITADOS = ["POUP", "CDB", "LCI"]
 
     def criar_database(self, database: str) -> None:
         """
@@ -46,8 +51,13 @@ class SotTransform:
             DataFrame: Dados transformados para a camada Silver.
         """
 
+        df = (
+            df.withColumn("tipo_contrato", F.trim(F.upper(F.col("tipo_contrato"))))
+            .withColumn("tipo_lancamento", F.trim(F.upper(F.col("tipo_lancamento"))))
+            .withColumn("cod_cosif", F.trim(F.upper(F.col("cod_cosif"))))
+        )
 
-        return df
+        return self.calcular_valor_assinado(df)
 
     def gravar_tabela_iceberg(self, df: DataFrame, tabela_destino: str, versao: str) -> None:
         """
@@ -136,3 +146,26 @@ class SotTransform:
             .withColumn("motivo_rejeicao", F.lit("duplicata de id_transacao"))
         )
         return unicos, duplicados
+
+    def calcular_valor_assinado(self, df: DataFrame) -> DataFrame:
+        """
+        Cria `valor_assinado`: positivo para entrada de dinheiro na conta do
+        cliente e negativo para saída, já considerando o estorno.
+        """
+        lancamento = F.col("tipo_lancamento")
+        contrato = F.col("tipo_contrato")
+
+        sinal = F.when(
+            lancamento == "JUROS",
+            F.when(contrato.isin(*self.CONTRATOS_JUROS_CREDITADOS), F.lit(1)).otherwise(F.lit(-1)),
+        )
+        for tipo, valor_sinal in self.NATUREZA_LANCAMENTO.items():
+            sinal = sinal.when(lancamento == tipo, F.lit(valor_sinal))
+
+        estornado = F.coalesce(F.col("flag_estorno"), F.lit(False))
+        fator = F.when(estornado, -sinal).otherwise(sinal)
+
+        return df.withColumn(
+            "valor_assinado",
+            (F.col("valor_lancamento") * fator).cast(DecimalType(18, 2)),
+        )

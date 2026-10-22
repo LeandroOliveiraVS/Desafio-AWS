@@ -1,5 +1,5 @@
 import pytest
-
+from decimal import Decimal
 from app.src.sot_transform import SotTransform
 from pyspark.sql import functions as F
 from pyspark.sql import SparkSession
@@ -18,6 +18,19 @@ def spark():
     )
     yield sessao
     sessao.stop()
+
+@pytest.mark.parametrize(
+    "lancamento, contrato, estorno, esperado",
+    [
+        ("CREDITO", "CC", False, Decimal("10.00")),
+        ("DEBITO", "CC", False, Decimal("-10.00")),
+        ("TARIFA", "POUP", False, Decimal("-10.00")),
+        ("JUROS", "CDB", False, Decimal("10.00")),
+        ("JUROS", "CC", False, Decimal("-10.00")),
+        ("DEBITO", "CC", True, Decimal("10.00")),   # débito estornado devolve o dinheiro
+        ("JUROS", "LCI", True, Decimal("-10.00")),
+    ],
+)
 
 def test_separar_chaves_nulas(spark):
     df = spark.createDataFrame(
@@ -50,3 +63,13 @@ def test_separar_duplicatas_mantem_o_mais_recente(spark):
     assert [(r.id_transacao, r.id_lote, r.motivo_rejeicao) for r in duplicados.collect()] == [
         ("t-1", "l-1", "duplicata de id_transacao")
     ]
+
+def test_calcular_valor_assinado(spark, lancamento, contrato, estorno, esperado):
+    df = spark.createDataFrame(
+        [(lancamento, contrato, estorno, Decimal("10.00"))],
+        "tipo_lancamento string, tipo_contrato string, flag_estorno boolean, valor_lancamento decimal(18,2)",
+    )
+
+    linha = SotTransform(spark).calcular_valor_assinado(df).first()
+
+    assert linha.valor_assinado == esperado
