@@ -9,32 +9,44 @@ Este projeto está sendo desenvolvido como solução para um desafio de engenhar
 ## Estrutura
 ```
 .
-├── generate_layer/
+├── generate_layer/                 # 1. Geração de dados fictícios (Lambda)
 │   ├── app/
-│   │   ├── src/
-│   │   │   └── data_generator/
-│   │   │       ├── data_faker.py
-│   │   │       └── handler.py
+│   │   ├── src/data_generator/
+│   │   │   ├── contas.csv
+│   │   │   ├── contratos.csv
+│   │   │   ├── data_faker.py
+│   │   │   └── handler.py
 │   │   ├── tests/
-│   │   │   ├── test_handler.py
-│   │   │   └── test_data_faker.py
-│   │   └── lambda_function.py
+│   │   │   ├── test_faker.py
+│   │   │   └── test_handler.py
+│   │   ├── lambda_function.py
+│   │   └── requirements.txt
 │   └── infra/
-├── sor_layer/
+│       └── scripts/build_layer.sh
+├── sor_layer/                      # 2. Bronze (Glue)
 │   ├── app/
 │   │   ├── src/
-│   │   └── tests/
+│   │   │   ├── raw_processor_job.py
+│   │   │   ├── raw_transformacoes.py
+│   │   │   └── raw_processor.py   # versão anterior, em arquivo único
+│   │   └── tests/test_raw_transformacoes.py
 │   └── infra/
-├── sot_layer/
+├── sot_layer/                      # 3. Silver (Glue)
 │   ├── app/
 │   │   ├── src/
-│   │   └── tests/
+│   │   │   ├── sot_job.py
+│   │   │   └── sot_transform.py
+│   │   └── tests/test_sot_transform.py
 │   └── infra/
-├── spec_layer/
+├── spec_layer/                     # 4. Gold (Glue)
 │   ├── app/
 │   │   ├── src/
+│   │   │   ├── business_views/
+│   │   │   ├── spec_job.py
+│   │   │   └── spec_transform.py
 │   │   └── tests/
 │   └── infra/
+├── infra/                          # Recursos compartilhados: bucket do data lake e Step Functions
 ├── docs/
 ├── requirements.txt
 ├── .gitignore
@@ -42,23 +54,25 @@ Este projeto está sendo desenvolvido como solução para um desafio de engenhar
 └── README.md
 ```
 
+Cada pasta `infra/` é um projeto Terraform independente (`terraform init`/`apply` dentro dela).
+
 ## 1.Geração de dados fictícios
 A Lambda funciona como etapa de simulação da origem dos dados:
 
 - `DataCreator` lê os identificadores das contas e associa contratos fictícios.
 - `LambdaHandler` gera os registros, cria um arquivo Parquet usando Polars e grava o resultado no S3.
-- Os identificadores da conta: `id_conta`, `cod_agencia` e `cnpj` são lidos do CSV `identificadores` e armazenados como strings para preservar zeros à esquerda.
-- Os identificadores dos contratos: `id_contrato` e `tipo_contrato` são lidos do CSV `contratos` utilizando o `id_conta`
+- Os identificadores da conta: `id_conta`, `cod_agencia` e `cnpj` são lidos do CSV `contas.csv` e armazenados como strings para preservar zeros à esquerda.
+- Os identificadores dos contratos: `id_contrato` e `tipo_contrato` são lidos do CSV `contratos.csv` utilizando o `id_conta`.
 - Os demais dados da transação, valores e datas, são gerados para fins de teste.
 
-#### `identificadores.csv`
+#### `contas.csv`
 
 Contém os identificadores das contas:
 
 ```csv
 id_conta,cod_agencia,cnpj
-0001,0001,000000001
-0002,0001,000000002
+2960,3719,09LY7FEP8ZZ7M
+0003,6157,0L8KQFJRQH9QW
 ```
 
 #### `contratos.csv`
@@ -66,58 +80,58 @@ id_conta,cod_agencia,cnpj
 Contém os contratos associados a cada conta:
 
 ```csv
-id_conta,id_contrato,tipo_contrato
-0001,contrato-0001-01,CC
-0001,contrato-0001-02,POUP
-0001,contrato-0001-03,CDB
-0002,contrato-0002-01,LCI
-0002,contrato-0002-02,SEGURO
-0002,contrato-0002-03,CONSORCIO
+id_contrato,tipo_contrato,id_conta
+87f5fd2e-069d-4931-9af4-09c4a529fe06,SEGURO,2960
+1ca63482-772c-4fcf-a4f1-132386c7d5d7,CC,0003
 ```
 
 O nome `id_conta` deve existir nos dois arquivos. O gerador usa esse campo como chave para encontrar os contratos da conta selecionada:
 
 ```text
-identificadores.csv -- id_conta --> contratos.csv
+contas.csv -- id_conta --> contratos.csv
 ```
 
-Os identificadores devem ser lidos como strings para preservar zeros à esquerda. O campo `cnpj` de nove caracteres alfanuméricos é sintético e não representa um CNPJ fiscal válido.
+Os identificadores devem ser lidos como strings para preservar zeros à esquerda. O campo `cnpj` de treze caracteres alfanuméricos é sintético e não representa um CNPJ fiscal válido.
 
 ### Geração de transações
 
 O `DataCreator` realiza as seguintes etapas:
 
-1. Lê os identificadores do `identificadores.csv`.
+1. Lê os identificadores do `contas.csv`.
 2. Lê os contratos do `contratos.csv` e cria uma estrutura indexada por `id_conta`.
 3. Seleciona uma conta e busca os contratos associados ao `id_conta` dela.
 4. Gera os registros transacionais.
 5. Retorna os registros para o `LambdaHandler`.
 
-O contrato de dados do desafio define `id_conta` e `cod_agencia` como strings. Também descreve os campos transacionais como identificador da transação, contrato, tipo de lançamento, valor, datas, classificação COSIF e indicador de estorno. <sup class="citation">2</sup>
+Todos os registros de uma execução recebem o mesmo `id_lote`, o que permite identificar e reprocessar cada lote gerado.
+
+#### Erros propositais
+
+Para exercitar as regras de qualidade da Silver, o gerador pode criar erros de propósito. Com `taxa_erros` maior que zero, cada registro tem essa
+chance de ser gerado com erro, sendo metade das vezes:
+
+- **chave nula**: `id_transacao`, `id_conta` ou `id_contrato` é gravado como nulo;
+- **duplicata**: o registro é substituído por uma cópia de um registro anterior do mesmo lote (mesmo `id_transacao`).
+
+A quantidade total de registros não muda, e a contagem dos erros injetados é registrada no log e devolvida na resposta da Lambda (`erros_injetados`).
+
+O contrato de dados do desafio define `id_conta` e `cod_agencia` como strings. Também descreve os campos transacionais como identificador da transação, contrato, tipo de lançamento, valor, datas, classificação COSIF e indicador de estorno.
 
 ### Execução da Lambda
 
 #### Configuração
 
-Configure as seguintes variáveis de ambiente:
+A Lambda é criada pelo Terraform (veja "Infraestrutura"), que já define as variáveis de ambiente:
 
 - `BUCKET_DESTINO`: bucket S3 de destino.
 - `PREFIXO_DESTINO`: prefixo em que os Parquet serão gravados.
 
 A role de execução da Lambda precisa de `s3:PutObject` no prefixo de saída. Como o CSV está no pacote implantado, não é necessário `s3:GetObject` para lê-lo.
 
-Se o arquivo não tiver um ponto de entrada de nível de módulo, inclua no `handler.py`:
-
-```python
-def lambda_handler(event, context):
-    """Ponto de entrada da função AWS Lambda."""
-    return LambdaHandler().executar(event or {})
-```
-
-Configure o campo **Manipulador** da Lambda como:
+O ponto de entrada é a função `lambda_handler` do `generate_layer/app/lambda_function.py`, configurada no campo **Manipulador** como:
 
 ```text
-handler.lambda_handler
+generate_layer.app.lambda_function.lambda_handler
 ```
 
 #### Evento de teste
@@ -125,11 +139,14 @@ handler.lambda_handler
 ```json
 {
   "quantidade": 1000,
-  "data_particao": "2025-02-10T14:30:00Z"
+  "data_particao": "2025-02-10T14:30:00Z",
+  "taxa_erros": 0.02
 }
 ```
 
-`quantidade` é o número de transações a gerar. A quantidade de contas disponíveis é determinada pelas linhas do CSV.
+- `quantidade`: número de transações a gerar (padrão 1000). A quantidade de contas disponíveis é determinada pelas linhas do CSV.
+- `data_particao`: data e hora da partição; sem ela, é usada a data e hora UTC da execução.
+- `taxa_erros`: fração (0 a 1) dos registros gerados com erro proposital (padrão 0).
 
 ### Infraestrutura (Terraform)
 
@@ -138,7 +155,7 @@ A infraestrutura da camada fica em `generate_layer/infra/` e cria:
 - O bucket de destino (`desafio-aws-contratos`) já existe e é apenas referenciado, não é criado pelo Terraform.
 - Lambda Layer com `polars` e `Faker` (`generate_layer/app/requirements.txt`). O zip passa de 50 MB e por isso é publicado no prefixo `artefatos/` do bucket de destino.
 - Lambda `data-generator` (Python 3.12) com o código e os CSVs de contas/contratos, gravando em `contratos/`.
-- Agendamento no EventBridge Scheduler de segunda a sexta às 6h, 14h e 20h (`America/Sao_Paulo`), gerando `quantidade_registros` transações.
+- Agendamento no EventBridge Scheduler de segunda a sexta às 6h, 14h e 20h (`America/Sao_Paulo`), gerando `quantidade_registros` transações com `taxa_erros` (padrão 0,02) de erros propositais.
 - Roles IAM com permissão mínima (`s3:PutObject` no prefixo de saída e `lambda:InvokeFunction` para o agendamento) e log group no CloudWatch.
 
 ```bash
@@ -164,16 +181,31 @@ A camada Bronze é executada no `AWS Glue` que extrai os dados fictícios gerado
 no prefixo `bronze/` do bucket do data lake (`desafio-aws-datalake`) e no catalógo do glue, no database `bronze`. A execução é orquestrada pelo `AWS Step Functions`.
 
 A leitura dos dados é feita via DynamicFrame e passada para Dataframe e escrita em Iceberg V3 e uma versão alternativa com o sufixo `_alt` é criada
-devido a incompatibilidade do Iceberg V3 com Athena.
+devido a incompatibilidade do Iceberg V3 com Athena. As tabelas `bronze.transacoes` e `bronze.transacoes_alt` são particionadas por `dt_processamento`.
+
+Antes da gravação, o job aplica o contrato de dados gerado pela Lambda: seleciona as colunas do contrato, na ordem do contrato, convertidas para os tipos
+esperados (`valor_lancamento` como `decimal(18,2)`, por exemplo). Se faltar alguma coluna, o job falha com uma mensagem indicando as colunas ausentes.
+
+O código fica dividido em dois arquivos:
+
+- `raw_processor_job.py`: script do job, que lê os parâmetros e os Parquet de origem e grava as tabelas.
+- `raw_transformacoes.py`: classe `Bronze` com as regras, sem dependência do `awsglue`, o que permite testá-las localmente com PySpark e pytest.
 
 ### Parâmetros do job Glue
 
 | Parâmetro | Exemplo | Uso |
 |---|---|---|
-| `--bucket_origem` | `<nome-do-bucket-origem>` | Bucket de origem dos Parquet. |
-| `--bucket_bronze` | `<nome-do-bucket-bronze>` | Bucket usado como warehouse da tabela Iceberg. |
+| `--bucket_origem` | `desafio-aws-contratos` | Bucket de origem; os Parquet são lidos do prefixo `contratos/`. |
+| `--bucket_bronze` | `desafio-aws-datalake` | Bucket do data lake (o warehouse das tabelas é definido no `--conf`). |
+| `--extra-py-files` | `s3://<bucket-artefatos>/scripts/raw_transformacoes.py` | Disponibiliza o `raw_transformacoes.py` para o job. |
 | `--datalake-formats` | `iceberg` | Habilita o formato Iceberg no job. |
-| `--conf` | Configurações Spark do Iceberg | Define extensões, catálogo, warehouse e implementação de I/O. |
+| `--conf` | Configurações Spark do Iceberg | Define extensões, catálogo, warehouse (`s3://desafio-aws-datalake/bronze/`) e implementação de I/O. |
+
+### Testes
+
+```bash
+.venv/bin/python -m pytest sor_layer/app/tests
+```
 
 ## 3.Silver (sot)
 A camada Silver é executada no `AWS Glue` e lê a tabela Iceberg `bronze.transacoes` pelo catálogo do Glue. Ela aplica as regras de qualidade, padroniza
