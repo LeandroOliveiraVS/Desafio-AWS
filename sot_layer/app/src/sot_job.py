@@ -38,9 +38,11 @@ sot_transform.criar_database(args['database_destino'])
 
 tabela_destino = f"glue_catalog.{args['database_destino']}.transacoes"
 tabela_destino_alt = f"glue_catalog.{args['database_destino']}.transacoes_alt"
+tabela_destino_rejeitados = f"glue_catalog.{args['database_destino']}.transacoes_rejeitadas"
 
 sot_transform.gravar_tabela_iceberg(df_silver, tabela_destino, '3')
 sot_transform.gravar_tabela_iceberg(df_silver, tabela_destino_alt, '2')
+sot_transform.gravar_tabela_iceberg(df_rejeitados, tabela_destino_rejeitados, '2')
 
 print('##############################')
 print('------- GLUE JOB DONE -------')
