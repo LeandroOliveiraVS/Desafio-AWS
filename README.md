@@ -161,7 +161,7 @@ Os registros são gravados em formato Parquet com compressão Zstandard, em um c
 
 ## 2.Bronze (sor)
 A camada Bronze é executada no `AWS Glue` que extrai os dados fictícios gerados na etapa anterior de bucket no `S3` e salva os dados no formato `Iceberg`
-em um bucket próprio da camada bronze e no catalógo do glue. A execução é orquestrada pelo `AWS Step Functions`.
+no prefixo `bronze/` do bucket do data lake (`desafio-aws-datalake`) e no catalógo do glue, no database `bronze`. A execução é orquestrada pelo `AWS Step Functions`.
 
 A leitura dos dados é feita via DynamicFrame e passada para Dataframe e escrita em Iceberg V3 e uma versão alternativa com o sufixo `_alt` é criada
 devido a incompatibilidade do Iceberg V3 com Athena.
@@ -175,12 +175,73 @@ devido a incompatibilidade do Iceberg V3 com Athena.
 | `--datalake-formats` | `iceberg` | Habilita o formato Iceberg no job. |
 | `--conf` | Configurações Spark do Iceberg | Define extensões, catálogo, warehouse e implementação de I/O. |
 
-### Orquestração
-
-O AWS Step Functions inicia o job Bronze usando a integração síncrona do Glue (`startJobRun.sync`), aguardando a conclusão antes de encerrar a execução.
-- Se falhar, o workflow faz até duas tentativas adicionais, com intervalo de duas horas entre as tentativas.
-- Se todas as tentativas falharem, a execução do workflow termina com falha.
-
 ## 3.Silver (sot)
+A camada Silver é executada no `AWS Glue` e lê a tabela Iceberg `bronze.transacoes` pelo catálogo do Glue. Ela aplica as regras de qualidade, padroniza
+e enriquece os dados, e grava o resultado no formato `Iceberg` no prefixo `silver/` do bucket do data lake e no catálogo do glue, no database `silver`.
+
+Assim como na Bronze, são gravadas duas tabelas particionadas por `dt_processamento`: `silver.transacoes` (Iceberg V3) e `silver.transacoes_alt` (Iceberg V2),
+esta última para leitura pelo Athena. Se a tabela já existir, apenas as partições presentes nos dados são substituídas.
+
+O código fica dividido em dois arquivos:
+
+- `sot_job.py`: script do job, que lê os parâmetros, chama as regras e grava as tabelas.
+- `sot_transform.py`: classe `SotTransform` com as regras, sem dependência do `awsglue`, o que permite testá-las localmente com PySpark e pytest.
+
+### Regras de qualidade
+
+As regras são aplicadas antes das transformações, nesta ordem:
+
+1. **Chaves obrigatórias**: registros com `id_transacao`, `id_conta`, `id_contrato` ou `dt_processamento` nulos (ou texto vazio) são separados, com o motivo
+   da rejeição (ex.: `chave nula: id_conta, id_contrato`).
+2. **Duplicatas**: é mantido um registro por `id_transacao`, o de `dt_processamento` mais recente (desempate por `dt_lancamento` e `id_lote`); os demais são separados.
+
+Os registros rejeitados ainda não são gravados em tabela: são separados e descartados.
+
+### Transformações
+
+| Coluna | Regra |
+|---|---|
+| `tipo_contrato`, `tipo_lancamento`, `cod_cosif` | Padronizados com `trim` e letras maiúsculas. |
+| `categoria_produto` | `CC` e `POUP` → `CONTA`; `CDB` e `LCI` → `INVESTIMENTO`; `SEGURO` e `CONSORCIO` mantêm o nome. Contrato não mapeado fica nulo. |
+| `ano_mes` | Mês do lançamento no horário de Brasília (`America/Sao_Paulo`), no formato `AAAA-MM`. |
+| `dias_ate_processamento` | Dias entre a data do lançamento e `dt_processamento` (ambos em UTC). |
+| `valor_assinado` | `valor_lancamento` com sinal: positivo para entrada de dinheiro na conta do cliente e negativo para saída (regra abaixo). |
+| `dt_load_sot` | Data e hora (UTC) da carga Silver; o mesmo valor para todas as linhas e tabelas de uma execução. |
+| `id_execucao` | `JOB_RUN_ID` da execução do Glue que gravou a linha. |
+
+O sinal de `valor_assinado` segue a natureza do lançamento:
+
+- `CREDITO` é positivo; `DEBITO`, `TARIFA` e `IOF` são negativos.
+- `JUROS` é positivo nos contratos em que é rendimento pago ao cliente (`POUP`, `CDB`, `LCI`) e negativo nos demais (`CC`, `CONSORCIO`, `SEGURO`).
+- Quando `flag_estorno` é verdadeiro, o sinal é invertido (ex.: um débito estornado devolve o dinheiro ao cliente).
+
+### Parâmetros do job Glue
+
+| Parâmetro | Exemplo | Uso |
+|---|---|---|
+| `--tabela_origem` | `glue_catalog.bronze.transacoes` | Tabela da Bronze lida pelo catálogo. |
+| `--database_destino` | `silver` | Database das tabelas da Silver, criado se não existir. |
+| `--extra-py-files` | `s3://<bucket-artefatos>/scripts/sot_transform.py` | Disponibiliza o `sot_transform.py` para o job. |
+| `--datalake-formats` | `iceberg` | Habilita o formato Iceberg no job. |
+| `--conf` | Configurações Spark do Iceberg | Define extensões, catálogo, warehouse (`s3://desafio-aws-datalake/silver/`) e implementação de I/O. |
+
+### Testes
+
+```bash
+.venv/bin/python -m pytest sot_layer/app/tests
+```
+
+## Orquestração (Step Functions)
+
+A state machine `aws-desafio-state-machine` (`infra/sfn.tf`) executa as camadas em sequência, usando a integração síncrona do Glue (`startJobRun.sync`):
+cada etapa aguarda a conclusão do job antes de seguir.
+
+```text
+Bronze (aws-desafio-sor-etl-job) -> Silver (aws-desafio-sot-etl-job)
+```
+
+- Se um job falhar, a etapa faz até duas tentativas adicionais, com intervalo de duas horas entre as tentativas.
+- Se todas as tentativas falharem, a execução do workflow termina com falha e as etapas seguintes não são executadas.
+- A saída de cada etapa guarda o nome do job, o `JobRunId` e o estado final da execução.
 
 ## 4.Gold (spec)
