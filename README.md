@@ -42,9 +42,13 @@ Este projeto está sendo desenvolvido como solução para um desafio de engenhar
 │   ├── app/
 │   │   ├── src/
 │   │   │   ├── business_views/
+│   │   │   │   └── saldo_conta_por_contrato.py
 │   │   │   ├── spec_job.py
 │   │   │   └── spec_transform.py
 │   │   └── tests/
+│   │       ├── conftest.py
+│   │       ├── test_saldo_conta_por_contrato.py
+│   │       └── test_spec_transform.py
 │   └── infra/
 ├── infra/                          # Recursos compartilhados: bucket do data lake e Step Functions
 ├── docs/
@@ -281,6 +285,90 @@ O sinal de `valor_assinado` segue a natureza do lançamento:
 .venv/bin/python -m pytest sot_layer/app/tests
 ```
 
+## 4.Gold (spec)
+A camada Gold é executada no `AWS Glue` e gera as **business views**: tabelas prontas para consumo, calculadas a partir das tabelas da Silver.
+O resultado é gravado no formato `Iceberg` no prefixo `gold/` do bucket do data lake e no catálogo do glue, no database `gold`.
+
+Cada business view gera duas tabelas com o nome da view: `gold.<view>` (Iceberg V3) e `gold.<view>_alt` (Iceberg V2), esta última para
+leitura pelo Athena.
+
+### Estrutura das business views
+
+Um único job Glue atende todas as views. A view a executar é informada em cada execução pelo parâmetro `--business_view`:
+
+- `spec_transform.py`: classe abstrata `SpecTransform`, base de todas as views. Fornece a leitura pelo catálogo, a criação do database e a
+  gravação das tabelas, e define o método abstrato `create_business_view(df)`, que cada view implementa com a sua regra de negócio.
+- `business_views/`: um arquivo por business view, com uma única classe que herda `SpecTransform`.
+- `spec_job.py`: script do job, que carrega a view pelo nome, lê a tabela de origem, chama `create_business_view` e grava as tabelas.
+
+O nome do arquivo (sem `.py`) é o valor de `--business_view` e também o nome da tabela Gold; por isso deve ser um nome válido de módulo Python,
+em letras minúsculas (ex.: `saldo_conta_por_contrato`). O nome da classe é livre.
+
+```python
+# business_views/minha_view.py
+from spec_transform import SpecTransform
+
+
+class MinhaView(SpecTransform):
+    COLUNAS_PARTICAO = ("dt_processamento",)  # opcional; () grava sem partição
+
+    def create_business_view(self, df):
+        ...
+```
+
+Para publicar uma nova view, basta criar o arquivo e rodar `terraform apply` em `spec_layer/infra`: o `spec_transform.py` e o pacote
+`business_views/` são empacotados em um zip enviado ao job pelo `--extra-py-files`, sem outras mudanças na infraestrutura. Para que a view
+rode na orquestração, acrescente o nome dela à variável `business_views` em `infra/variables.tf`.
+
+### Business view: `saldo_conta_por_contrato`
+
+Saldo diário consolidado da conta corrente (`tipo_contrato = CC`) por contrato, para toda a base de clientes.
+
+| Coluna | Descrição |
+|---|---|
+| `data_saldo` | Dia do saldo, pela data do lançamento no horário de Brasília. Coluna de partição. |
+| `id_contrato`, `id_conta`, `cod_agencia`, `cnpj` | Identificação do contrato e da conta. |
+| `movimento_dia` | Soma do `valor_assinado` dos lançamentos do dia (0 nos dias sem movimento). |
+| `qtd_lancamentos` | Quantidade de lançamentos do dia. |
+| `saldo` | Saldo acumulado do contrato até o dia. |
+
+- Cada contrato tem uma linha por dia, do primeiro lançamento até a data mais recente da base, inclusive nos dias sem movimento,
+  em que o saldo do dia anterior se mantém.
+- A origem não informa saldo inicial: todo contrato começa com saldo zero.
+- A view é recalculada por completo a cada execução, porque a Silver recebe lançamentos com até 30 dias de atraso, que alteram saldos de dias anteriores.
+
+```sql
+-- Saldo de cada contrato na data mais recente
+SELECT id_contrato, saldo
+FROM gold.saldo_conta_por_contrato_alt
+WHERE data_saldo = (SELECT max(data_saldo) FROM gold.saldo_conta_por_contrato_alt)
+ORDER BY saldo DESC;
+```
+
+### Parâmetros do job Glue
+
+| Parâmetro | Exemplo | Uso |
+|---|---|---|
+| `--business_view` | `saldo_conta_por_contrato` | View a executar; obrigatório e informado em cada execução. |
+| `--tabela_origem` | `glue_catalog.silver.transacoes` | Tabela da Silver lida pelo catálogo e entregue a `create_business_view`. |
+| `--database_destino` | `gold` | Database das tabelas da Gold, criado se não existir. |
+| `--extra-py-files` | `s3://<bucket-artefatos>/scripts/spec_libs.zip` | Zip com o `spec_transform.py` e o pacote `business_views`. |
+| `--datalake-formats` | `iceberg` | Habilita o formato Iceberg no job. |
+| `--conf` | Configurações Spark do Iceberg | Define extensões, catálogo, warehouse (`s3://desafio-aws-datalake/gold/`) e implementação de I/O. |
+
+O job aceita até 3 execuções simultâneas (variável `max_execucoes_simultaneas`), uma por view. Para executar uma view manualmente:
+
+```bash
+aws glue start-job-run --job-name aws-desafio-spec-etl-job \
+  --arguments '{"--business_view":"saldo_conta_por_contrato"}'
+```
+
+### Testes
+
+```bash
+.venv/bin/python -m pytest spec_layer/app/tests
+```
+
 ## Orquestração (Step Functions)
 
 A state machine `aws-desafio-state-machine` (`infra/sfn.tf`) executa as camadas em sequência, usando a integração síncrona do Glue (`startJobRun.sync`):
@@ -296,5 +384,3 @@ com o parâmetro `--business_view`. Para incluir uma nova view na orquestração
 - Se um job falhar, a etapa faz até duas tentativas adicionais, com intervalo de duas horas entre as tentativas.
 - Se todas as tentativas falharem, a execução do workflow termina com falha e as etapas seguintes não são executadas.
 - A saída de cada etapa guarda o nome do job, o `JobRunId` e o estado final da execução.
-
-## 4.Gold (spec)
