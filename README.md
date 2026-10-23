@@ -227,7 +227,7 @@ As regras são aplicadas antes das transformações, nesta ordem:
    da rejeição (ex.: `chave nula: id_conta, id_contrato`).
 2. **Duplicatas**: é mantido um registro por `id_transacao`, o de `dt_processamento` mais recente (desempate por `dt_lancamento` e `id_lote`); os demais são separados.
 
-Os registros rejeitados são gravados em tabela Iceberg V2.
+Os registros rejeitados são gravados em tabela Iceberg V2 para fins de auditoria.
 
 ### Transformações
 
