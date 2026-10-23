@@ -52,13 +52,18 @@ class DataCreator:
             "SEGURO",
         ]
 
-        self._TIPOS_LANCAMENTO = [
-            "DEBITO",
-            "CREDITO",
-            "TARIFA",
-            "JUROS",
-            "IOF",
-        ]
+        # Peso (chance de sorteio) e faixa de valor de cada tipo de lançamento.
+        # Calibrados para que, na conta corrente, entradas e saídas se equilibrem:
+        # em média um lançamento soma cerca de +135, então os saldos ficam
+        # distribuídos em torno de zero, com leve viés positivo.
+        self._PERFIL_LANCAMENTO = {
+            "CREDITO": {"peso": 45, "faixa": (100.00, 5000.00)},
+            "DEBITO": {"peso": 40, "faixa": (10.00, 5000.00)},
+            "TARIFA": {"peso": 7, "faixa": (5.00, 80.00)},
+            "IOF": {"peso": 4, "faixa": (1.00, 50.00)},
+            "JUROS": {"peso": 4, "faixa": (5.00, 300.00)},
+        }
+        self._TIPOS_LANCAMENTO = list(self._PERFIL_LANCAMENTO)
 
         # Códigos fictícios para a demonstração.
         # Não são códigos COSIF oficiais.
@@ -219,6 +224,8 @@ class DataCreator:
 
         cod_cosif = self._COSIF_MOCK.get(contrato["tipo_contrato"], "COSIF-MOCK-000")
 
+        tipo_lancamento = self._sortear_tipo_lancamento()
+
         return {
             'id_transacao': str(uuid.uuid4()),
             'id_contrato': contrato["id_contrato"],
@@ -226,8 +233,8 @@ class DataCreator:
             'cod_agencia': cod_agencia,
             'cnpj': cnpj,
             'tipo_contrato': contrato["tipo_contrato"],
-            'tipo_lancamento': random.choice(self._TIPOS_LANCAMENTO),
-            'valor_lancamento': Decimal(str(round(random.uniform(0.01, 10000.00), 2))),
+            'tipo_lancamento': tipo_lancamento,
+            'valor_lancamento': self._sortear_valor(tipo_lancamento),
             'dt_lancamento': dt_lancamento,
             'dt_processamento': self.data_processamento,
             'cod_cosif': cod_cosif,
@@ -235,6 +242,16 @@ class DataCreator:
             'id_lote': self._id_lote
         }
     
+    def _sortear_tipo_lancamento(self) -> str:
+        """Sorteia o tipo de lançamento de acordo com os pesos de `_PERFIL_LANCAMENTO`."""
+        pesos = [perfil["peso"] for perfil in self._PERFIL_LANCAMENTO.values()]
+        return random.choices(self._TIPOS_LANCAMENTO, weights=pesos, k=1)[0]
+
+    def _sortear_valor(self, tipo_lancamento: str) -> Decimal:
+        """Sorteia um valor positivo, com duas casas, dentro da faixa do tipo de lançamento."""
+        minimo, maximo = self._PERFIL_LANCAMENTO[tipo_lancamento]["faixa"]
+        return Decimal(str(round(random.uniform(minimo, maximo), 2)))
+
     def gerar_registros(self) -> list[dict]:
         """
         Gera uma lista de registros fictícios de transações bancárias.

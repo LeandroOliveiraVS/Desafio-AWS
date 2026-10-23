@@ -1,3 +1,4 @@
+from decimal import Decimal
 import random
 from datetime import date
 import pytest
@@ -160,3 +161,38 @@ def test_primeiro_registro_com_erro_e_chave_nula():
 def test_taxa_de_erros_invalida(taxa):
     with pytest.raises(ValueError, match="taxa de erros"):
         data_faker_module.DataCreator(date(2025, 2, 10), quantidade=1, taxa_erros=taxa)
+
+
+def test_valor_respeita_a_faixa_do_tipo_de_lancamento():
+    random.seed(1)
+    gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=2000)
+
+    for registro in gerador.gerar_registros():
+        minimo, maximo = gerador._PERFIL_LANCAMENTO[registro["tipo_lancamento"]]["faixa"]
+        assert Decimal(str(minimo)) <= registro["valor_lancamento"] <= Decimal(str(maximo))
+        assert registro["valor_lancamento"] == registro["valor_lancamento"].quantize(Decimal("0.01"))
+
+
+def test_tipos_de_lancamento_seguem_os_pesos():
+    random.seed(2)
+    gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=5000)
+
+    registros = gerador.gerar_registros()
+    total_pesos = sum(p["peso"] for p in gerador._PERFIL_LANCAMENTO.values())
+
+    for tipo, perfil in gerador._PERFIL_LANCAMENTO.items():
+        proporcao = sum(r["tipo_lancamento"] == tipo for r in registros) / len(registros)
+        assert proporcao == pytest.approx(perfil["peso"] / total_pesos, abs=0.03), tipo
+
+
+def test_movimento_medio_da_conta_corrente_fica_proximo_de_zero():
+    """Na CC, só CREDITO é entrada; com os pesos, entradas e saídas se equilibram."""
+    random.seed(3)
+    gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=5000)
+
+    sinais = {"CREDITO": 1, "DEBITO": -1, "TARIFA": -1, "IOF": -1, "JUROS": -1}
+    registros = gerador.gerar_registros()
+    media = sum(sinais[r["tipo_lancamento"]] * r["valor_lancamento"] for r in registros) / len(registros)
+
+    # Leve viés positivo (~+135), longe dos ~-3.000 da distribuição anterior.
+    assert 0 < media < 400

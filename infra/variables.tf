@@ -27,3 +27,14 @@ variable "bucket_artefatos" {
   type        = string
   default     = "desafio-aws-artefatos"
 }
+
+variable "business_views" {
+  description = "Business views da camada Gold executadas pela state machine (nomes dos arquivos em spec_layer/app/src/business_views/, sem .py)."
+  type        = list(string)
+  default     = ["saldo_conta_por_contrato"]
+
+  validation {
+    condition     = length(var.business_views) > 0
+    error_message = "Informe ao menos uma business view."
+  }
+}

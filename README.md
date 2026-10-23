@@ -269,8 +269,11 @@ A state machine `aws-desafio-state-machine` (`infra/sfn.tf`) executa as camadas 
 cada etapa aguarda a conclusão do job antes de seguir.
 
 ```text
-Bronze (aws-desafio-sor-etl-job) -> Silver (aws-desafio-sot-etl-job)
+Bronze (aws-desafio-sor-etl-job) -> Silver (aws-desafio-sot-etl-job) -> Gold (aws-desafio-spec-etl-job, uma execução por business view)
 ```
+
+Na etapa Gold, cada business view listada na variável `business_views` (`infra/variables.tf`) roda em paralelo, como uma execução do job Gold
+com o parâmetro `--business_view`. Para incluir uma nova view na orquestração, basta acrescentar o nome do arquivo à lista.
 
 - Se um job falhar, a etapa faz até duas tentativas adicionais, com intervalo de duas horas entre as tentativas.
 - Se todas as tentativas falharem, a execução do workflow termina com falha e as etapas seguintes não são executadas.

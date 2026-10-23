@@ -18,16 +18,37 @@ locals {
     "JobRunId.$"    = "$.Id"
     "JobRunState.$" = "$.JobRunState"
   }
+
+  # Um ramo por business view: todas rodam o job Gold (spec) em paralelo,
+  # cada uma com o seu --business_view.
+  ramos_gold = [
+    for view in var.business_views : {
+      StartAt = view
+      States = {
+        (view) = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::glue:startJobRun.sync"
+          Parameters = {
+            JobName   = local.glue_jobs["spec"]
+            Arguments = { "--business_view" = view }
+          }
+          ResultSelector = local.resultado_glue
+          Retry          = local.retry_glue
+          End            = true
+        }
+      }
+    }
+  ]
 }
 
-# Orquestra as camadas Bronze (sor) e Silver (sot); cada etapa espera o job
-# Glue terminar (startJobRun.sync) antes de seguir.
+# Orquestra as camadas Bronze (sor), Silver (sot) e Gold (spec); cada etapa
+# espera o job Glue terminar (startJobRun.sync) antes de seguir.
 resource "aws_sfn_state_machine" "sfn" {
   name     = "${var.projeto}-state-machine"
   role_arn = aws_iam_role.step_function.arn
 
   definition = jsonencode({
-    Comment = "ETL ${var.projeto}: Bronze (sor) -> Silver (sot)"
+    Comment = "ETL ${var.projeto}: Bronze (sor) -> Silver (sot) -> Gold (spec)"
     StartAt = "Bronze"
     States = {
       Bronze = {
@@ -46,7 +67,15 @@ resource "aws_sfn_state_machine" "sfn" {
         ResultSelector = local.resultado_glue
         ResultPath     = "$.silver"
         Retry          = local.retry_glue
-        End            = true
+        Next           = "Gold"
+      }
+      # Se uma view falhar (após as retentativas), a etapa Gold falha e as
+      # demais views em andamento são canceladas.
+      Gold = {
+        Type       = "Parallel"
+        Branches   = local.ramos_gold
+        ResultPath = "$.gold"
+        End        = true
       }
     }
   })
