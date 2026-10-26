@@ -50,7 +50,7 @@ Este projeto está sendo desenvolvido como solução para um desafio de engenhar
 │   │       ├── test_saldo_conta_por_contrato.py
 │   │       └── test_spec_transform.py
 │   └── infra/
-├── infra/                          # Recursos compartilhados: bucket do data lake e Step Functions
+├── infra/                          # Recursos compartilhados: bucket do data lake, Step Functions e gatilho por eventos (SQS)
 ├── docs/
 ├── requirements.txt
 ├── .gitignore
@@ -384,3 +384,38 @@ com o parâmetro `--business_view`. Para incluir uma nova view na orquestração
 - Se um job falhar, a etapa faz até duas tentativas adicionais, com intervalo de duas horas entre as tentativas.
 - Se todas as tentativas falharem, a execução do workflow termina com falha e as etapas seguintes não são executadas.
 - A saída de cada etapa guarda o nome do job, o `JobRunId` e o estado final da execução.
+- O primeiro estado (`Inicio`) guarda a entrada da execução no campo `gatilho`. Assim a state machine aceita tanto o lote de mensagens
+  enviado pelo gatilho por eventos quanto uma execução manual com `{}`, e o histórico registra quais arquivos dispararam cada execução.
+
+### Gatilho por eventos (S3 → SQS → Step Functions)
+
+A state machine é iniciada automaticamente quando a Lambda grava um novo arquivo de contratos (`infra/events.tf`):
+
+```text
+Lambda grava .parquet -> S3 (desafio-aws-contratos/contratos/) -> SQS -> EventBridge Pipe -> Step Functions
+                                                                  └-> DLQ (mensagens com falha)
+```
+
+- **Notificação do bucket**: eventos `s3:ObjectCreated:*` de arquivos `.parquet` no prefixo `contratos/` são enviados para a fila
+  `aws-desafio-contratos`. A fila só aceita mensagens do S3 vindas do bucket de contratos da própria conta.
+- **Fila e DLQ**: mensagens que falharem 3 vezes vão para a fila `aws-desafio-contratos-dlq`, onde ficam por 14 dias para investigação.
+- **EventBridge Pipe** (`aws-desafio-contratos-sfn`): lê a fila e inicia a state machine. Arquivos que chegam em até 5 minutos (ou até
+  10 mensagens) são agrupados em uma única execução. O pipe só repassa eventos de arquivo criado; o evento de teste que o S3 envia ao
+  configurar a notificação é descartado.
+
+Como a Bronze lê todo o prefixo `contratos/` e aceita uma execução por vez, arquivos que chegam com poucos minutos de diferença, mas em lotes
+diferentes, geram uma segunda execução que aguarda a retentativa da Bronze. No uso normal (três cargas por dia, com horas de intervalo) isso não ocorre.
+
+O recurso `aws_s3_bucket_notification` controla todas as notificações do bucket de contratos: notificações criadas fora do Terraform são removidas no próximo `apply`.
+
+Para acompanhar as execuções e verificar mensagens com falha:
+
+```bash
+aws stepfunctions list-executions \
+  --state-machine-arn arn:aws:states:us-east-1:<conta>:stateMachine:aws-desafio-state-machine \
+  --max-items 3 --query 'executions[].[name,status,startDate]'
+
+aws sqs get-queue-attributes \
+  --queue-url $(aws sqs get-queue-url --queue-name aws-desafio-contratos-dlq --query QueueUrl --output text) \
+  --attribute-names ApproximateNumberOfMessages
+```

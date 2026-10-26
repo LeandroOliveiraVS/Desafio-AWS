@@ -49,8 +49,13 @@ resource "aws_sfn_state_machine" "sfn" {
 
   definition = jsonencode({
     Comment = "ETL ${var.projeto}: Bronze (sor) -> Silver (sot) -> Gold (spec)"
-    StartAt = "Bronze"
+    StartAt = "Inicio"
     States = {
+      Inicio = {
+        Type       = "Pass"
+        Parameters = { "gatilho.$" = "$" } # entrada vira { "gatilho": <lista ou objeto> }
+        Next       = "Bronze"
+      }
       Bronze = {
         Type           = "Task"
         Resource       = "arn:aws:states:::glue:startJobRun.sync"
