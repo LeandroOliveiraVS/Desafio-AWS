@@ -98,8 +98,15 @@ data "aws_iam_policy_document" "glue_job" {
     condition {
       test     = "StringEquals"
       variable = "cloudwatch:namespace"
-      values   = ["Glue"]
+      values   = ["Glue", "Glue Data Quality"]
     }
+  }
+
+  # Publicação dos resultados do Glue Data Quality avaliado no job
+  statement {
+    sid       = "PublicarDataQuality"
+    actions   = ["glue:PublishDataQuality"]
+    resources = ["arn:aws:glue:${var.regiao}:${local.conta_id}:dataQualityRuleset/*"]
   }
 }
 

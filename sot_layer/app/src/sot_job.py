@@ -4,6 +4,7 @@ from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
 from awsglue.context import GlueContext
 from awsglue.job import Job
+from awsglue.dynamicframe import DynamicFrame
 
 from sot_transform import SotTransform
 
@@ -36,12 +37,36 @@ df_validos, df_rej_nulas = sot_transform.separar_chaves_nulas(df_origem)
 df_tipos_validos, df_rej_tipo = sot_transform.separar_lancamento_invalido(df_validos)
 df_unicos, df_rej_duplicadas = sot_transform.separar_duplicatas(df_tipos_validos)
 
-df_silver = sot_transform.transform(df_unicos, dt_load_sot, id_execucao)
+# Em cache: o resultado é usado pelo Data Quality e pelas duas gravações.
+df_silver = sot_transform.transform(df_unicos, dt_load_sot, id_execucao).cache()
 df_rejeitados = sot_transform.adicionar_auditoria(
     df_rej_nulas.unionByName(df_rej_tipo).unionByName(df_rej_duplicadas),
     dt_load_sot,
     id_execucao,
 )
+
+# Data Quality: só monitora. Avalia as regras sobre os dados que serão gravados
+# na Silver e publica o resultado no Glue Data Quality e no CloudWatch; uma regra
+# com falha, ou um erro na própria avaliação, gera alerta no log, mas não impede
+# a gravação.
+try:
+    from awsgluedq.transforms import EvaluateDataQuality
+
+    resultado_dq = EvaluateDataQuality.apply(
+        frame=DynamicFrame.fromDF(df_silver, glueContext, "silver_transacoes"),
+        ruleset=sot_transform.regras_data_quality(),
+        publishing_options={
+            "dataQualityEvaluationContext": "silver_transacoes",
+            "enableDataQualityCloudWatchMetrics": True,
+            "enableDataQualityResultsPublishing": True,
+        },
+    ).toDF()
+
+    resultado_dq.select("Rule", "Outcome", "FailureReason").show(truncate=False)
+    for falha in resultado_dq.filter("Outcome != 'Passed'").collect():
+        print(f"[DATA QUALITY] Regra com falha: {falha['Rule']} | {falha['FailureReason']}")
+except Exception as erro:
+    print(f"[DATA QUALITY] Avaliação não executada: {erro!r}")
 
 sot_transform.criar_database(args['database_destino'])
 

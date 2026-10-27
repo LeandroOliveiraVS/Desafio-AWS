@@ -3,6 +3,15 @@
 ## Visão geral
 Este projeto está sendo desenvolvido como solução para um desafio de engenharia de dados.
 
+### Contexto do problema
+
+A área financeira do Itaú Unibanco necessita calcular diariamente o saldo consolidado de conta corrente por contrato para toda a sua base
+de clientes. Este processo é crítico para a contabilidade regulatória e para a conciliação de balanço.
+
+Para atender a essa necessidade, o projeto implementa um pipeline de dados na AWS em camadas: uma etapa de geração de transações fictícias,
+que simula a origem dos dados, seguida das camadas Bronze (dados brutos), Silver (dados validados e padronizados) e Gold (visões de negócio).
+O saldo diário consolidado é entregue pela business view `saldo_conta_por_contrato` da camada Gold.
+
 ## Arquitetura
 ![Architecture](docs/architecture.png)
 
@@ -304,6 +313,28 @@ As regras são aplicadas antes das transformações, nesta ordem:
 
 Os registros separados são gravados na tabela `silver.transacoes_rejeitadas` (Iceberg V2), com a coluna `motivo_rejeicao` e as colunas de auditoria
 `dt_load_sot` e `id_execucao`, que permitem saber em qual execução cada registro foi rejeitado.
+
+### Data Quality (AWS Glue Data Quality)
+
+Depois das regras de qualidade e das transformações, os dados que serão gravados na Silver são avaliados pelo **AWS Glue Data Quality**, com o
+ruleset em DQDL gerado por `SotTransform.regras_data_quality()`:
+
+| Regra | DQDL |
+|---|---|
+| `id_transacao` deve ser único globalmente | `IsUnique "id_transacao"` |
+| `valor_lancamento > 0` (estornos usam `flag_estorno = true`) | `ColumnValues "valor_lancamento" > 0` |
+| `dt_lancamento <= dt_processamento` | `CustomSql` que conta lançamentos com data (UTC) posterior a `dt_processamento`; um lançamento no próprio dia do processamento é válido. |
+| Completude: campos NOT NULL sem nulos | `IsComplete` em cada coluna do schema da Silver (`COLUNAS_NOT_NULL`) |
+| Completude: campos NOT NULL sem valores vazios | `CustomSql` que conta textos vazios ou só com espaços |
+
+Como a Silver relê toda a Bronze a cada execução, a unicidade de `id_transacao` vale para toda a base, não só para o lote do dia.
+
+O Data Quality **só monitora**: o resultado é publicado no console do Glue Data Quality e como métricas no CloudWatch (namespace `Glue Data Quality`),
+no contexto de avaliação `silver_transacoes`, e as regras com falha aparecem no log do job com o prefixo `[DATA QUALITY]`. Uma regra com falha, ou um
+erro na própria avaliação, não impede a gravação da Silver; a separação de registros inválidos continua sendo feita pelas regras de qualidade acima.
+
+A role do job tem permissão `glue:PublishDataQuality` para publicar os resultados. As consultas das regras `CustomSql` são testadas localmente com
+PySpark, executadas sobre uma tabela `primary`, como no Glue Data Quality.
 
 ### Transformações
 

@@ -246,3 +246,44 @@ def test_ordenar_como_tabela_segue_a_tabela_e_poe_colunas_novas_no_fim(spark):
 
     assert resultado.columns == ["id_transacao", "cnpj", "cod_agencia", "tipo_lancamento", "tipo_produto"]
     assert resultado.first()["cnpj"] == "CNPJ"
+
+
+def test_regras_data_quality_contem_as_regras(spark):
+    silver = SotTransform(spark)
+
+    ruleset = silver.regras_data_quality()
+
+    assert ruleset.startswith("Rules = [") and ruleset.endswith("]")
+    assert 'IsUnique "id_transacao"' in ruleset
+    assert 'ColumnValues "valor_lancamento" > 0' in ruleset
+    for coluna in silver.SCHEMA_SILVER:
+        assert f'IsComplete "{coluna}"' in ruleset
+    assert ruleset.count("CustomSql") == 2
+
+
+def contar_violacoes(spark, silver, nome, registros):
+    """Executa a consulta CustomSql como o Glue Data Quality, com a tabela `primary`."""
+    silver.aplicar_schema(spark.createDataFrame(registros)).createOrReplaceTempView("primary")
+    return spark.sql(silver.consultas_data_quality()[nome]).first()[0]
+
+
+def test_custom_sql_lancamento_apos_processamento(spark):
+    silver = SotTransform(spark)
+    registros = [
+        registro_bronze(id_transacao="mesmo-dia", dt_lancamento=datetime(2026, 10, 20, 23, 59, tzinfo=timezone.utc)),
+        registro_bronze(id_transacao="antes", dt_lancamento=datetime(2026, 10, 1, tzinfo=timezone.utc)),
+        registro_bronze(id_transacao="depois", dt_lancamento=datetime(2026, 10, 21, 0, 1, tzinfo=timezone.utc)),
+    ]
+
+    assert contar_violacoes(spark, silver, "lancamento_apos_processamento", registros) == 1
+
+
+def test_custom_sql_texto_vazio(spark):
+    silver = SotTransform(spark)
+    registros = [
+        registro_bronze(id_transacao="ok"),
+        registro_bronze(id_transacao="vazio", cnpj=""),
+        registro_bronze(id_transacao="espacos", tipo_produto="   "),
+    ]
+
+    assert contar_violacoes(spark, silver, "texto_vazio", registros) == 2

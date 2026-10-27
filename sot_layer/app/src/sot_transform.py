@@ -49,6 +49,8 @@ class SotTransform:
         }
         # Fuso usado no ano_mes; considera a sessão Spark em UTC (padrão do Glue).
         self.FUSO_HORARIO = "America/Sao_Paulo"
+        # Colunas que não podem ser nulas nem vazias (regra de completude do Data Quality).
+        self.COLUNAS_NOT_NULL = list(self.SCHEMA_SILVER)
 
     def criar_database(self, database: str) -> None:
         """
@@ -141,6 +143,48 @@ class SotTransform:
 
         df = self.calcular_valor_assinado(df)
         return self.adicionar_auditoria(df, dt_load_sot, id_execucao)
+
+    def consultas_data_quality(self) -> dict[str, str]:
+        """
+        Consultas SQL das regras `CustomSql` do Data Quality. Cada uma conta os
+        registros que violam a regra, então o resultado esperado é 0. No Glue
+        Data Quality, a tabela avaliada se chama `primary`.
+        """
+        colunas_texto = [
+            nome for nome, tipo in self.SCHEMA_SILVER.items()
+            if nome in self.COLUNAS_NOT_NULL and isinstance(tipo, StringType)
+        ]
+        return {
+            # Compara a data do lançamento (UTC, como o dt_processamento): um
+            # lançamento às 15h do dia do processamento é válido.
+            "lancamento_apos_processamento": (
+                "select count(*) from primary "
+                "where to_date(dt_lancamento) > dt_processamento"
+            ),
+            "texto_vazio": (
+                "select count(*) from primary where "
+                + " or ".join(f"trim({c}) = ''" for c in colunas_texto)
+            ),
+        }
+
+    def regras_data_quality(self) -> str:
+        """
+        Ruleset DQDL avaliado pelo Glue Data Quality sobre os dados da Silver:
+
+        - `id_transacao` único;
+        - `valor_lancamento` > 0 (estornos usam `flag_estorno`, não valor negativo);
+        - data do lançamento <= `dt_processamento`;
+        - completude: colunas de `COLUNAS_NOT_NULL` sem nulos nem textos vazios.
+        """
+        consultas = self.consultas_data_quality()
+        regras = [
+            'IsUnique "id_transacao"',
+            'ColumnValues "valor_lancamento" > 0',
+            f'CustomSql "{consultas["lancamento_apos_processamento"]}" = 0',
+            *[f'IsComplete "{coluna}"' for coluna in self.COLUNAS_NOT_NULL],
+            f'CustomSql "{consultas["texto_vazio"]}" = 0',
+        ]
+        return "Rules = [\n    " + ",\n    ".join(regras) + "\n]"
 
     def adicionar_auditoria(self, df: DataFrame, dt_load_sot: datetime, id_execucao: str) -> DataFrame:
         """
