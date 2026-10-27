@@ -52,16 +52,31 @@ class DataCreator:
             "SEGURO",
         ]
 
-        # Peso (chance de sorteio) e faixa de valor de cada tipo de lançamento.
-        # Calibrados para que, na conta corrente, entradas e saídas se equilibrem:
-        # em média um lançamento soma cerca de +135, então os saldos ficam
-        # distribuídos em torno de zero, com leve viés positivo.
+        # Peso (chance de sorteio) de cada tipo de lançamento e, dentro dele, peso
+        # e faixa de valor de cada tipo de produto. Calibrados para que entradas
+        # (CREDITO) e saídas (DEBITO) se equilibrem: em média um lançamento soma
+        # cerca de +60, então os saldos ficam distribuídos em torno de zero, com
+        # leve viés positivo.
         self._PERFIL_LANCAMENTO = {
-            "CREDITO": {"peso": 45, "faixa": (100.00, 5000.00)},
-            "DEBITO": {"peso": 40, "faixa": (10.00, 5000.00)},
-            "TARIFA": {"peso": 7, "faixa": (5.00, 80.00)},
-            "IOF": {"peso": 4, "faixa": (1.00, 50.00)},
-            "JUROS": {"peso": 4, "faixa": (5.00, 300.00)},
+            "CREDITO": {
+                "peso": 40,
+                "produtos": {
+                    "PIX_RECEBIDO": {"peso": 55, "faixa": (10.00, 3000.00)},
+                    "TED_RECEBIDA": {"peso": 15, "faixa": (100.00, 8000.00)},
+                    "DEPOSITO": {"peso": 15, "faixa": (50.00, 2000.00)},
+                    "SALARIO": {"peso": 10, "faixa": (1500.00, 8000.00)},
+                    "RESGATE_INVESTIMENTO": {"peso": 5, "faixa": (100.00, 5000.00)},
+                },
+            },
+            "DEBITO": {
+                "peso": 60,
+                "produtos": {
+                    "PIX_ENVIADO": {"peso": 40, "faixa": (10.00, 3000.00)},
+                    "COMPRA_DEBITO": {"peso": 28, "faixa": (5.00, 800.00)},
+                    "PAGAMENTO_BOLETO": {"peso": 23, "faixa": (50.00, 5000.00)},
+                    "SAQUE": {"peso": 9, "faixa": (20.00, 1500.00)},
+                },
+            },
         }
         self._TIPOS_LANCAMENTO = list(self._PERFIL_LANCAMENTO)
 
@@ -225,6 +240,7 @@ class DataCreator:
         cod_cosif = self._COSIF_MOCK.get(contrato["tipo_contrato"], "COSIF-MOCK-000")
 
         tipo_lancamento = self._sortear_tipo_lancamento()
+        tipo_produto = self._sortear_tipo_produto(tipo_lancamento)
 
         return {
             'id_transacao': str(uuid.uuid4()),
@@ -234,7 +250,8 @@ class DataCreator:
             'cnpj': cnpj,
             'tipo_contrato': contrato["tipo_contrato"],
             'tipo_lancamento': tipo_lancamento,
-            'valor_lancamento': self._sortear_valor(tipo_lancamento),
+            'tipo_produto': tipo_produto,
+            'valor_lancamento': self._sortear_valor(tipo_lancamento, tipo_produto),
             'dt_lancamento': dt_lancamento,
             'dt_processamento': self.data_processamento,
             'cod_cosif': cod_cosif,
@@ -247,9 +264,16 @@ class DataCreator:
         pesos = [perfil["peso"] for perfil in self._PERFIL_LANCAMENTO.values()]
         return random.choices(self._TIPOS_LANCAMENTO, weights=pesos, k=1)[0]
 
-    def _sortear_valor(self, tipo_lancamento: str) -> Decimal:
-        """Sorteia um valor positivo, com duas casas, dentro da faixa do tipo de lançamento."""
-        minimo, maximo = self._PERFIL_LANCAMENTO[tipo_lancamento]["faixa"]
+    def _sortear_tipo_produto(self, tipo_lancamento: str) -> str:
+        """Sorteia um tipo de produto do tipo de lançamento, de acordo com os pesos dos produtos."""
+        produtos = self._PERFIL_LANCAMENTO[tipo_lancamento]["produtos"]
+        pesos = [produto["peso"] for produto in produtos.values()]
+        return random.choices(list(produtos), weights=pesos, k=1)[0]
+
+    def _sortear_valor(self, tipo_lancamento: str, tipo_produto: str) -> Decimal:
+        """Sorteia um valor positivo, com duas casas, dentro da faixa do tipo de produto."""
+        produto = self._PERFIL_LANCAMENTO[tipo_lancamento]["produtos"][tipo_produto]
+        minimo, maximo = produto["faixa"]
         return Decimal(str(round(random.uniform(minimo, maximo), 2)))
 
     def gerar_registros(self) -> list[dict]:

@@ -163,12 +163,13 @@ def test_taxa_de_erros_invalida(taxa):
         data_faker_module.DataCreator(date(2025, 2, 10), quantidade=1, taxa_erros=taxa)
 
 
-def test_valor_respeita_a_faixa_do_tipo_de_lancamento():
+def test_valor_respeita_a_faixa_do_tipo_de_produto():
     random.seed(1)
     gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=2000)
 
     for registro in gerador.gerar_registros():
-        minimo, maximo = gerador._PERFIL_LANCAMENTO[registro["tipo_lancamento"]]["faixa"]
+        produtos = gerador._PERFIL_LANCAMENTO[registro["tipo_lancamento"]]["produtos"]
+        minimo, maximo = produtos[registro["tipo_produto"]]["faixa"]
         assert Decimal(str(minimo)) <= registro["valor_lancamento"] <= Decimal(str(maximo))
         assert registro["valor_lancamento"] == registro["valor_lancamento"].quantize(Decimal("0.01"))
 
@@ -190,9 +191,36 @@ def test_movimento_medio_da_conta_corrente_fica_proximo_de_zero():
     random.seed(3)
     gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=5000)
 
-    sinais = {"CREDITO": 1, "DEBITO": -1, "TARIFA": -1, "IOF": -1, "JUROS": -1}
+    sinais = {"CREDITO": 1, "DEBITO": -1}
     registros = gerador.gerar_registros()
     media = sum(sinais[r["tipo_lancamento"]] * r["valor_lancamento"] for r in registros) / len(registros)
 
-    # Leve viés positivo (~+135), longe dos ~-3.000 da distribuição anterior.
+    # Leve viés positivo (~+60), longe dos ~-3.000 da distribuição original.
     assert 0 < media < 400
+
+
+def test_tipo_lancamento_e_apenas_credito_ou_debito():
+    random.seed(4)
+    gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=1000)
+
+    tipos = {r["tipo_lancamento"] for r in gerador.gerar_registros()}
+
+    assert tipos == {"CREDITO", "DEBITO"}
+
+
+def test_tipo_produto_pertence_ao_tipo_de_lancamento():
+    random.seed(5)
+    gerador = data_faker_module.DataCreator(date(2025, 2, 10), quantidade=3000)
+
+    registros = gerador.gerar_registros()
+
+    for registro in registros:
+        assert registro["tipo_produto"] in gerador._PERFIL_LANCAMENTO[registro["tipo_lancamento"]]["produtos"]
+
+    # Com 3000 registros, todos os produtos aparecem ao menos uma vez.
+    todos_produtos = {
+        produto
+        for perfil in gerador._PERFIL_LANCAMENTO.values()
+        for produto in perfil["produtos"]
+    }
+    assert {r["tipo_produto"] for r in registros} == todos_produtos

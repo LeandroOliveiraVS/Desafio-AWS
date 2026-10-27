@@ -42,6 +42,7 @@ class LambdaHandler:
         "cod_agencia": pl.Utf8,
         "tipo_contrato": pl.Utf8,
         "tipo_lancamento": pl.Utf8,
+        "tipo_produto": pl.Utf8,
         "valor_lancamento": pl.Decimal(precision=18, scale=2),
         "dt_lancamento": pl.Datetime(
             time_unit="us",

@@ -111,21 +111,24 @@ Todos os registros de uma execução recebem o mesmo `id_lote`, o que permite id
 
 #### Tipos e valores dos lançamentos
 
-O `tipo_lancamento` é sorteado com pesos, e o `valor_lancamento` é sorteado dentro de uma faixa própria de cada tipo
-(atributo `_PERFIL_LANCAMENTO` do `DataCreator`):
+O `tipo_lancamento` é `CREDITO` (entrada de dinheiro) ou `DEBITO` (saída). Para cada lançamento é sorteado um `tipo_produto` do respectivo
+tipo, e o `valor_lancamento` é sorteado dentro da faixa do produto (atributo `_PERFIL_LANCAMENTO` do `DataCreator`):
 
-| Tipo | Peso | Faixa de valor |
-|---|---|---|
-| `CREDITO` | 45% | 100,00 a 5.000,00 |
-| `DEBITO` | 40% | 10,00 a 5.000,00 |
-| `TARIFA` | 7% | 5,00 a 80,00 |
-| `IOF` | 4% | 1,00 a 50,00 |
-| `JUROS` | 4% | 5,00 a 300,00 |
+| Lançamento | Produto | Peso no lançamento | Faixa de valor |
+|---|---|---|---|
+| `CREDITO` (40%) | `PIX_RECEBIDO` | 55% | 10,00 a 3.000,00 |
+| | `TED_RECEBIDA` | 15% | 100,00 a 8.000,00 |
+| | `DEPOSITO` | 15% | 50,00 a 2.000,00 |
+| | `SALARIO` | 10% | 1.500,00 a 8.000,00 |
+| | `RESGATE_INVESTIMENTO` | 5% | 100,00 a 5.000,00 |
+| `DEBITO` (60%) | `PIX_ENVIADO` | 40% | 10,00 a 3.000,00 |
+| | `COMPRA_DEBITO` | 28% | 5,00 a 800,00 |
+| | `PAGAMENTO_BOLETO` | 23% | 50,00 a 5.000,00 |
+| | `SAQUE` | 9% | 20,00 a 1.500,00 |
 
-Os pesos e as faixas foram calibrados para que, na conta corrente, as entradas (`CREDITO`) e as saídas se equilibrem: em média um
-lançamento soma cerca de +135, e os saldos ficam distribuídos em torno de zero, com leve viés positivo. O valor é sempre positivo, com
-duas casas decimais; o sinal (entrada ou saída) é aplicado na Silver, na coluna `valor_assinado`. O `flag_estorno` é verdadeiro em
-cerca de 5% dos registros.
+Os pesos e as faixas foram calibrados para que as entradas e as saídas se equilibrem: em média um lançamento soma cerca de +60, e os saldos
+ficam distribuídos em torno de zero, com leve viés positivo. O valor é sempre positivo, com duas casas decimais; o sinal (entrada ou saída)
+é aplicado na Silver, na coluna `valor_assinado`. O `flag_estorno` é verdadeiro em cerca de 5% dos registros.
 
 #### Erros propositais
 
