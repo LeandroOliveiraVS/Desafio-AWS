@@ -52,49 +52,32 @@ def test_montar_caminho_origem(bronze):
     assert bronze.montar_caminho_origem("bucket", "/outro/") == "s3://bucket/outro/"
 
 
-def test_aplicar_contrato_retorna_colunas_e_tipos_do_contrato(spark, bronze, registro_origem):
-    df = spark.createDataFrame([registro_origem])
+def test_ler_origem_junta_colunas_de_arquivos_com_schemas_diferentes(spark, bronze, registro_origem, tmp_path):
+    """Arquivos antigos não têm tipo_produto; a coluna não pode ser descartada."""
+    antigo = dict(registro_origem, id_transacao="t-antigo")
+    novo = dict(registro_origem, id_transacao="t-novo", tipo_produto="PIX_RECEBIDO")
+    spark.createDataFrame([antigo]).write.parquet(str(tmp_path / "2026/10/20/09"))
+    spark.createDataFrame([novo]).write.parquet(str(tmp_path / "2026/10/27/09"))
 
-    resultado = bronze.aplicar_contrato(df)
+    df = bronze.ler_origem(str(tmp_path))
 
-    assert resultado.columns == list(bronze.SCHEMA_CONTRATO)
-    assert {campo.name: campo.dataType for campo in resultado.schema} == bronze.SCHEMA_CONTRATO
-
-
-def test_aplicar_contrato_preserva_valores(spark, bronze, registro_origem):
-    df = spark.createDataFrame([registro_origem])
-
-    linha = bronze.aplicar_contrato(df).first()
-
-    assert linha["valor_lancamento"] == Decimal("1234.56")
-    assert linha["id_conta"] == "0003"
-    assert linha["dt_processamento"] == date(2026, 10, 20)
+    assert "tipo_produto" in df.columns
+    produtos = {r.id_transacao: r.tipo_produto for r in df.collect()}
+    assert produtos == {"t-antigo": None, "t-novo": "PIX_RECEBIDO"}
 
 
-def test_aplicar_contrato_converte_double_para_decimal(spark, bronze, registro_origem):
-    """Arquivos antigos do gerador gravavam valor_lancamento como double."""
-    registro_origem["valor_lancamento"] = 10.1
-    df = spark.createDataFrame([registro_origem])
+def test_ler_origem_mantem_os_dados_como_estao(spark, bronze, registro_origem, tmp_path):
+    """A Bronze não converte tipos nem descarta colunas."""
+    registros = [
+        dict(registro_origem, coluna_extra="x"),
+        dict(registro_origem, coluna_extra="y", id_transacao=None),  # chave nula é mantida
+    ]
+    origem = spark.createDataFrame(registros)
+    origem.write.parquet(str(tmp_path / "2026/10/20/09"))
 
-    resultado = bronze.aplicar_contrato(df)
+    df = bronze.ler_origem(str(tmp_path))
 
-    assert resultado.schema["valor_lancamento"].dataType == DecimalType(18, 2)
-    assert resultado.first()["valor_lancamento"] == Decimal("10.10")
-
-
-def test_aplicar_contrato_descarta_colunas_fora_do_contrato(spark, bronze, registro_origem):
-    registro_origem["coluna_extra"] = "x"
-    df = spark.createDataFrame([registro_origem])
-
-    resultado = bronze.aplicar_contrato(df)
-
-    assert "coluna_extra" not in resultado.columns
-
-
-def test_aplicar_contrato_falha_sem_coluna_obrigatoria(spark, bronze, registro_origem):
-    """Arquivos antigos do gerador não tinham a coluna cnpj."""
-    del registro_origem["cnpj"]
-    df = spark.createDataFrame([registro_origem])
-
-    with pytest.raises(ValueError, match="cnpj"):
-        bronze.aplicar_contrato(df)
+    assert set(df.columns) == set(origem.columns)
+    assert dict(df.dtypes) == dict(origem.dtypes)
+    linhas = {r.coluna_extra: r.id_transacao for r in df.collect()}
+    assert linhas == {"x": "t-1", "y": None}

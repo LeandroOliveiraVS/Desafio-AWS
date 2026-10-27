@@ -1,20 +1,13 @@
 """
 Regras da camada Bronze, sem dependência do `awsglue`.
 
-As funções recebem e devolvem DataFrames do Spark, o que permite testá-las
-com PySpark local e pytest, sem executar o job no Glue.
+A Bronze carrega os dados da origem da forma que são, sem selecionar colunas
+nem converter tipos. Os métodos recebem e devolvem DataFrames do Spark, o que
+permite testá-los com PySpark local e pytest, sem executar o job no Glue.
 """
 import logging
 
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col
-from pyspark.sql.types import (
-    BooleanType,
-    DateType,
-    DecimalType,
-    StringType,
-    TimestampType,
-)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -23,23 +16,6 @@ class Bronze:
 
     def __init__(self, spark: SparkSession):
         self.spark = spark
-        # Contrato de dados gerado pela camada generate_layer (LambdaHandler.SCHEMA).
-        self.SCHEMA_CONTRATO = {
-            "id_transacao": StringType(),
-            "id_contrato": StringType(),
-            "id_conta": StringType(),
-            "cnpj": StringType(),
-            "cod_agencia": StringType(),
-            "tipo_contrato": StringType(),
-            "tipo_lancamento": StringType(),
-            "valor_lancamento": DecimalType(18, 2),
-            "dt_lancamento": TimestampType(),
-            "dt_processamento": DateType(),
-            "cod_cosif": StringType(),
-            "flag_estorno": BooleanType(),
-            "id_lote": StringType(),
-        }
-
         self.COLUNA_PARTICAO = "dt_processamento"
 
     def criar_database(self, database: str) -> None:
@@ -67,29 +43,27 @@ class Bronze:
         return f"s3://{bucket_origem}/{prefixo.strip('/')}/"
 
 
-    def aplicar_contrato(self, df: DataFrame) -> DataFrame:
+    def ler_origem(self, caminho: str) -> DataFrame:
         """
-        Seleciona as colunas do contrato, na ordem do contrato, convertidas para os tipos esperados.
+        Lê todos os Parquet abaixo de `caminho`, como estão na origem.
 
-        Colunas que não fazem parte do contrato são descartadas.
+        Os arquivos podem ter schemas diferentes (por exemplo, arquivos antigos sem
+        uma coluna criada depois); o `mergeSchema` junta as colunas de todos eles,
+        deixando nulas as colunas que não existem em um arquivo. Sem ele, o Spark
+        usaria o schema de um único arquivo e poderia descartar colunas.
 
         Args:
-            df: DataFrame lido da origem.
+            caminho: Pasta de origem, como `s3://<bucket>/contratos/`.
 
         Returns:
-            DataFrame com exatamente as colunas e os tipos de `SCHEMA_CONTRATO`.
-
-        Raises:
-            ValueError: Se alguma coluna do contrato não existir na origem.
+            DataFrame com a união das colunas de todos os arquivos.
         """
-        colunas_faltantes = set(self.SCHEMA_CONTRATO) - set(df.columns)
-        if colunas_faltantes:
-            raise ValueError(
-                f"Colunas do contrato ausentes na origem: {sorted(colunas_faltantes)}"
-            )
-
-        return df.select(
-            [col(nome).cast(tipo).alias(nome) for nome, tipo in self.SCHEMA_CONTRATO.items()]
+        logger.info("Lendo dados da origem: %s", caminho)
+        return (
+            self.spark.read
+            .option("mergeSchema", "true")
+            .option("recursiveFileLookup", "true")
+            .parquet(caminho)
         )
 
 
@@ -103,8 +77,11 @@ class Bronze:
         Cria a tabela Iceberg particionada por `dt_processamento` ou, se ela já existir,
         substitui as partições presentes no DataFrame.
 
+        A tabela aceita evolução de schema: colunas novas na origem são acrescentadas
+        à tabela, e colunas ausentes no DataFrame ficam nulas.
+
         Args:
-            df: DataFrame já com o contrato aplicado.
+            df: DataFrame lido da origem.
             nome_tabela: Nome completo da tabela, como `glue_catalog.bronze.transacoes`.
             format_version: Versão do formato Iceberg usada na criação ("2" ou "3").
         """
@@ -120,6 +97,7 @@ class Bronze:
                 df.writeTo(nome_tabela)
                 .using("iceberg")
                 .tableProperty("format-version", format_version)
+                .tableProperty("write.spark.accept-any-schema", "true")
                 .partitionedBy(self.COLUNA_PARTICAO)
                 .create()
             )
@@ -129,4 +107,9 @@ class Bronze:
                 "partições presentes nos dados.",
                 nome_tabela,
             )
-            df.writeTo(nome_tabela).overwritePartitions()
+            # Garante a evolução de schema também em tabelas criadas antes dela.
+            self.spark.sql(
+                f"ALTER TABLE {nome_tabela} "
+                "SET TBLPROPERTIES ('write.spark.accept-any-schema' = 'true')"
+            )
+            df.writeTo(nome_tabela).option("mergeSchema", "true").overwritePartitions()

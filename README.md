@@ -205,16 +205,28 @@ Os registros são gravados em formato Parquet com compressão Zstandard, em um c
 A camada Bronze é executada no `AWS Glue` que extrai os dados fictícios gerados na etapa anterior de bucket no `S3` e salva os dados no formato `Iceberg`
 no prefixo `bronze/` do bucket do data lake (`desafio-aws-datalake`) e no catalógo do glue, no database `bronze`. A execução é orquestrada pelo `AWS Step Functions`.
 
-A leitura dos dados é feita via DynamicFrame e passada para Dataframe e escrita em Iceberg V3 e uma versão alternativa com o sufixo `_alt` é criada
-devido a incompatibilidade do Iceberg V3 com Athena. As tabelas `bronze.transacoes` e `bronze.transacoes_alt` são particionadas por `dt_processamento`.
+A Bronze carrega os dados **da forma que são**: não seleciona colunas, não converte tipos e não descarta registros. Colunas novas, colunas extras
+e registros com chaves nulas ou duplicados chegam à Bronze como vieram da origem; a validação e a padronização ficam a cargo da Silver.
 
-Antes da gravação, o job aplica o contrato de dados gerado pela Lambda: seleciona as colunas do contrato, na ordem do contrato, convertidas para os tipos
-esperados (`valor_lancamento` como `decimal(18,2)`, por exemplo). Se faltar alguma coluna, o job falha com uma mensagem indicando as colunas ausentes.
+Os dados são gravados em Iceberg V3 e em uma versão alternativa com o sufixo `_alt` (Iceberg V2), criada devido à incompatibilidade do Iceberg V3
+com o Athena. As tabelas `bronze.transacoes` e `bronze.transacoes_alt` são particionadas por `dt_processamento`; se a tabela já existir, apenas as
+partições presentes nos dados são substituídas.
+
+### Evolução de schema
+
+Os arquivos de origem podem ter schemas diferentes ao longo do tempo (por exemplo, a coluna `tipo_produto` existe apenas nos arquivos gerados após
+a sua criação). Para que nenhuma coluna seja perdida:
+
+- **Leitura**: os Parquet são lidos com `mergeSchema`, que junta as colunas de todos os arquivos; as colunas ausentes em um arquivo ficam nulas
+  nos registros dele. Sem essa opção, o Spark usaria o schema de um único arquivo e poderia descartar colunas sem aviso.
+- **Gravação**: as tabelas aceitam evolução de schema (propriedade `write.spark.accept-any-schema` e gravação com `mergeSchema`). Uma coluna nova
+  na origem é acrescentada à tabela na próxima execução, sem necessidade de recriá-la. A propriedade também é aplicada às tabelas já existentes.
 
 O código fica dividido em dois arquivos:
 
-- `raw_processor_job.py`: script do job, que lê os parâmetros e os Parquet de origem e grava as tabelas.
-- `raw_transformacoes.py`: classe `Bronze` com as regras, sem dependência do `awsglue`, o que permite testá-las localmente com PySpark e pytest.
+- `raw_processor_job.py`: script do job, que lê os parâmetros, lê os Parquet de origem e grava as tabelas.
+- `raw_transformacoes.py`: classe `Bronze` com a leitura da origem e a gravação das tabelas, sem dependência do `awsglue`, o que permite testá-la
+  localmente com PySpark e pytest.
 
 ### Parâmetros do job Glue
 
