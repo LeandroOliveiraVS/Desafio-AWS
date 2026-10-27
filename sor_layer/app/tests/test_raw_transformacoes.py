@@ -81,3 +81,16 @@ def test_ler_origem_mantem_os_dados_como_estao(spark, bronze, registro_origem, t
     assert dict(df.dtypes) == dict(origem.dtypes)
     linhas = {r.coluna_extra: r.id_transacao for r in df.collect()}
     assert linhas == {"x": "t-1", "y": None}
+
+
+def test_ordenar_como_tabela_segue_a_tabela_e_poe_colunas_novas_no_fim(spark):
+    """A ordem que causou o erro na Bronze: cnpj/cod_agencia trocados e coluna nova no meio."""
+    df = spark.createDataFrame(
+        [("t-1", "0001", "CNPJ", "CREDITO", "PIX_RECEBIDO")],
+        "id_transacao string, cod_agencia string, cnpj string, tipo_lancamento string, tipo_produto string",
+    )
+
+    resultado = Bronze.ordenar_como_tabela(df, ["id_transacao", "cnpj", "cod_agencia", "tipo_lancamento"])
+
+    assert resultado.columns == ["id_transacao", "cnpj", "cod_agencia", "tipo_lancamento", "tipo_produto"]
+    assert resultado.first()["cnpj"] == "CNPJ"

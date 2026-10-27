@@ -28,11 +28,20 @@ sot_transform = SotTransform(spark)
 
 df_bronze = sot_transform.catalog_origem(args["tabela_origem"])
 
-df_validos, df_rej_nulas = sot_transform.separar_chaves_nulas(df_bronze)
-df_unicos, df_rej_duplicadas = sot_transform.separar_duplicatas(df_validos)
+# A Bronze guarda os dados como chegam; aqui eles ganham colunas e tipos definidos.
+df_origem = sot_transform.aplicar_schema(df_bronze)
+
+# Regras de qualidade, nesta ordem; cada etapa separa os registros rejeitados.
+df_validos, df_rej_nulas = sot_transform.separar_chaves_nulas(df_origem)
+df_tipos_validos, df_rej_tipo = sot_transform.separar_lancamento_invalido(df_validos)
+df_unicos, df_rej_duplicadas = sot_transform.separar_duplicatas(df_tipos_validos)
 
 df_silver = sot_transform.transform(df_unicos, dt_load_sot, id_execucao)
-df_rejeitados = df_rej_nulas.unionByName(df_rej_duplicadas)
+df_rejeitados = sot_transform.adicionar_auditoria(
+    df_rej_nulas.unionByName(df_rej_tipo).unionByName(df_rej_duplicadas),
+    dt_load_sot,
+    id_execucao,
+)
 
 sot_transform.criar_database(args['database_destino'])
 

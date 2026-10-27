@@ -56,11 +56,9 @@ def test_separar_duplicatas_mantem_o_mais_recente(spark):
     [
         ("CREDITO", "CC", False, Decimal("10.00")),
         ("DEBITO", "CC", False, Decimal("-10.00")),
-        ("TARIFA", "POUP", False, Decimal("-10.00")),
-        ("JUROS", "CDB", False, Decimal("10.00")),
-        ("JUROS", "CC", False, Decimal("-10.00")),
+        ("CREDITO", "CDB", True, Decimal("-10.00")),  # crédito estornado sai da conta
         ("DEBITO", "CC", True, Decimal("10.00")),   # débito estornado devolve o dinheiro
-        ("JUROS", "LCI", True, Decimal("-10.00")),
+        ("TARIFA", "CC", False, None),              # tipo fora da natureza: sem sinal
     ],
 )
 def test_calcular_valor_assinado(spark, lancamento, contrato, estorno, esperado):
@@ -82,7 +80,7 @@ ID_EXECUCAO = "jr_teste"
 def criar_df_transform(spark, registros):
     return spark.createDataFrame(
         registros,
-        "tipo_contrato string, tipo_lancamento string, cod_cosif string, "
+        "tipo_contrato string, tipo_lancamento string, tipo_produto string, cod_cosif string, "
         "flag_estorno boolean, valor_lancamento decimal(18,2), "
         "dt_lancamento timestamp, dt_processamento date",
     )
@@ -92,7 +90,7 @@ def test_transform_categoria_produto(spark):
     df = criar_df_transform(
         spark,
         [
-            (contrato, "CREDITO", "X", False, Decimal("1.00"),
+            (contrato, "CREDITO", "PIX_RECEBIDO", "X", False, Decimal("1.00"),
              datetime(2026, 10, 20, 12, tzinfo=timezone.utc), date(2026, 10, 20))
             for contrato in [" cc", "POUP", "CDB", "LCI", "SEGURO", "CONSORCIO", "OUTRO"]
         ],
@@ -116,9 +114,9 @@ def test_transform_ano_mes_usa_horario_de_brasilia(spark):
         spark,
         [
             # 1/11 às 01:00 UTC ainda é 31/10 às 22:00 em Brasília.
-            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+            ("CC", "CREDITO", "PIX_RECEBIDO", "X", False, Decimal("1.00"),
              datetime(2026, 11, 1, 1, tzinfo=timezone.utc), date(2026, 11, 1)),
-            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+            ("CC", "CREDITO", "PIX_RECEBIDO", "X", False, Decimal("1.00"),
              datetime(2026, 11, 1, 12, tzinfo=timezone.utc), date(2026, 11, 1)),
         ],
     )
@@ -132,9 +130,9 @@ def test_transform_dias_ate_processamento(spark):
     df = criar_df_transform(
         spark,
         [
-            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+            ("CC", "CREDITO", "PIX_RECEBIDO", "X", False, Decimal("1.00"),
              datetime(2026, 9, 20, 0, tzinfo=timezone.utc), date(2026, 10, 20)),
-            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+            ("CC", "CREDITO", "PIX_RECEBIDO", "X", False, Decimal("1.00"),
              datetime(2026, 10, 20, 23, 59, tzinfo=timezone.utc), date(2026, 10, 20)),
         ],
     )
@@ -147,7 +145,7 @@ def test_transform_auditoria(spark):
     df = criar_df_transform(
         spark,
         [
-            ("CC", "CREDITO", "X", False, Decimal("1.00"),
+            ("CC", "CREDITO", "PIX_RECEBIDO", "X", False, Decimal("1.00"),
              datetime(2026, 10, 20, 12, tzinfo=timezone.utc), date(2026, 10, 20)),
         ],
     )
@@ -158,3 +156,93 @@ def test_transform_auditoria(spark):
     # O collect() devolve o horário no fuso da máquina; convertendo para UTC,
     # a comparação funciona em qualquer computador.
     assert linha.dt_load_sot.astimezone(timezone.utc) == DT_LOAD_SOT
+
+
+def registro_bronze(**alteracoes):
+    """Registro como os gravados na Bronze; aceita colunas alteradas ou extras."""
+    registro = {
+        "id_transacao": "t-1",
+        "id_contrato": "c-1",
+        "id_conta": "0003",
+        "cnpj": "0L8KQFJRQH9QW",
+        "cod_agencia": "0001",
+        "tipo_contrato": "CC",
+        "tipo_lancamento": "CREDITO",
+        "tipo_produto": "PIX_RECEBIDO",
+        "valor_lancamento": Decimal("10.00"),
+        "dt_lancamento": datetime(2026, 10, 20, 12, tzinfo=timezone.utc),
+        "dt_processamento": date(2026, 10, 20),
+        "cod_cosif": "COSIF-MOCK-001",
+        "flag_estorno": False,
+        "id_lote": "l-1",
+    }
+    registro.update(alteracoes)
+    return registro
+
+
+def test_aplicar_schema_define_colunas_e_tipos(spark):
+    silver = SotTransform(spark)
+    df = spark.createDataFrame([registro_bronze(valor_lancamento=10.5, coluna_extra="x")])
+
+    resultado = silver.aplicar_schema(df)
+
+    assert resultado.columns == list(silver.SCHEMA_SILVER)
+    assert {c.name: c.dataType for c in resultado.schema} == silver.SCHEMA_SILVER
+    assert resultado.first()["valor_lancamento"] == Decimal("10.50")
+
+
+def test_aplicar_schema_falha_sem_coluna(spark):
+    registro = registro_bronze()
+    del registro["tipo_produto"]
+    df = spark.createDataFrame([registro])
+
+    with pytest.raises(ValueError, match="tipo_produto"):
+        SotTransform(spark).aplicar_schema(df)
+
+
+def test_separar_lancamento_invalido(spark):
+    df = spark.createDataFrame([
+        registro_bronze(id_transacao="t-1", tipo_lancamento="CREDITO"),
+        registro_bronze(id_transacao="t-2", tipo_lancamento=" debito"),
+        registro_bronze(id_transacao="t-3", tipo_lancamento="TARIFA"),
+    ])
+
+    validos, rejeitados = SotTransform(spark).separar_lancamento_invalido(df)
+
+    assert {r.id_transacao for r in validos.collect()} == {"t-1", "t-2"}
+    assert [(r.id_transacao, r.motivo_rejeicao) for r in rejeitados.collect()] == [
+        ("t-3", "tipo_lancamento inválido: TARIFA")
+    ]
+
+
+def test_transform_padroniza_tipo_produto(spark):
+    df = SotTransform(spark).aplicar_schema(
+        spark.createDataFrame([registro_bronze(tipo_produto=" pix_recebido ")])
+    )
+
+    linha = SotTransform(spark).transform(df, DT_LOAD_SOT, ID_EXECUCAO).first()
+
+    assert linha.tipo_produto == "PIX_RECEBIDO"
+
+
+def test_rejeitados_recebem_auditoria(spark):
+    df = spark.createDataFrame([registro_bronze(tipo_lancamento="IOF")])
+    _, rejeitados = SotTransform(spark).separar_lancamento_invalido(df)
+
+    linha = SotTransform(spark).adicionar_auditoria(rejeitados, DT_LOAD_SOT, ID_EXECUCAO).first()
+
+    assert linha.id_execucao == ID_EXECUCAO
+    assert linha.dt_load_sot.astimezone(timezone.utc) == DT_LOAD_SOT
+
+
+def test_ordenar_como_tabela_segue_a_tabela_e_poe_colunas_novas_no_fim(spark):
+    """A ordem que causou o erro na Bronze: cnpj/cod_agencia trocados e coluna nova no meio."""
+    df = spark.createDataFrame(
+        [("t-1", "0001", "CNPJ", "CREDITO", "PIX_RECEBIDO")],
+        "id_transacao string, cod_agencia string, cnpj string, tipo_lancamento string, tipo_produto string",
+    )
+
+    resultado = SotTransform.ordenar_como_tabela(df, ["id_transacao", "cnpj", "cod_agencia", "tipo_lancamento"])
+
+    assert resultado.columns == ["id_transacao", "cnpj", "cod_agencia", "tipo_lancamento", "tipo_produto"]
+    assert resultado.first()["cnpj"] == "CNPJ"

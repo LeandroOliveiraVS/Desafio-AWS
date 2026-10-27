@@ -67,6 +67,23 @@ class Bronze:
         )
 
 
+    @staticmethod
+    def ordenar_como_tabela(df: DataFrame, colunas_tabela: list[str]) -> DataFrame:
+        """
+        Reordena as colunas do DataFrame na ordem da tabela, com as colunas novas no fim.
+
+        O Iceberg recusa gravar quando a ordem das colunas difere da tabela, mesmo com
+        evolução de schema; isso acontece quando a origem muda a posição de uma coluna
+        ou acrescenta uma coluna no meio.
+
+        Args:
+            df: Dados a gravar.
+            colunas_tabela: Colunas da tabela existente, na ordem dela.
+        """
+        existentes = [c for c in colunas_tabela if c in df.columns]
+        novas = [c for c in df.columns if c not in colunas_tabela]
+        return df.select(existentes + novas)
+
     def gravar_tabela_iceberg(
         self,
         df: DataFrame,
@@ -112,4 +129,5 @@ class Bronze:
                 f"ALTER TABLE {nome_tabela} "
                 "SET TBLPROPERTIES ('write.spark.accept-any-schema' = 'true')"
             )
+            df = self.ordenar_como_tabela(df, self.spark.table(nome_tabela).columns)
             df.writeTo(nome_tabela).option("mergeSchema", "true").overwritePartitions()

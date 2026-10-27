@@ -1,7 +1,13 @@
 import logging
 from functools import reduce
 from pyspark.sql import Window, DataFrame, SparkSession, functions as F
-from pyspark.sql.types import DecimalType
+from pyspark.sql.types import (
+    BooleanType,
+    DateType,
+    DecimalType,
+    StringType,
+    TimestampType,
+)
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -10,12 +16,29 @@ logger.setLevel(logging.INFO)
 class SotTransform:
     def __init__(self, spark: SparkSession):
         self.spark = spark
-        self.COLUNA_PARTICAO = "dt_processamento" 
+        self.COLUNA_PARTICAO = "dt_processamento"
+        # A Bronze guarda os dados como chegam; a Silver é a primeira camada com
+        # colunas e tipos definidos.
+        self.SCHEMA_SILVER = {
+            "id_transacao": StringType(),
+            "id_contrato": StringType(),
+            "id_conta": StringType(),
+            "cnpj": StringType(),
+            "cod_agencia": StringType(),
+            "tipo_contrato": StringType(),
+            "tipo_lancamento": StringType(),
+            "tipo_produto": StringType(),
+            "valor_lancamento": DecimalType(18, 2),
+            "dt_lancamento": TimestampType(),
+            "dt_processamento": DateType(),
+            "cod_cosif": StringType(),
+            "flag_estorno": BooleanType(),
+            "id_lote": StringType(),
+        }
         self.CHAVES_OBRIGATORIAS = ["id_transacao", "id_conta", "id_contrato", "dt_processamento"]
-        # Valores negativos são cobrança.
-        self.NATUREZA_LANCAMENTO = {"CREDITO": 1, "DEBITO": -1, "TARIFA": -1, "IOF": -1}
-        # Contratos em que JUROS é rendimento pago ao cliente; nos demais, é cobrança.
-        self.CONTRATOS_JUROS_CREDITADOS = ["POUP", "CDB", "LCI"]
+        # Sinal de cada tipo de lançamento; outros tipos são rejeitados.
+        self.NATUREZA_LANCAMENTO = {"CREDITO": 1, "DEBITO": -1}
+
         self.CATEGORIA_PRODUTO = {
             "CC": "CONTA",
             "POUP": "CONTA",
@@ -51,12 +74,38 @@ class SotTransform:
         df = self.spark.table(tabela_origem)
         return df
 
+    def aplicar_schema(self, df: DataFrame) -> DataFrame:
+        """
+        Seleciona as colunas de `SCHEMA_SILVER`, na ordem do schema, convertidas
+        para os tipos esperados. Colunas da Bronze fora do schema são descartadas.
+
+        Args:
+            df (DataFrame): Dados lidos da camada Bronze.
+
+        Returns:
+            DataFrame: Dados com exatamente as colunas e os tipos de `SCHEMA_SILVER`.
+
+        Raises:
+            ValueError: Se alguma coluna do schema não existir na Bronze.
+        """
+        colunas_faltantes = set(self.SCHEMA_SILVER) - set(df.columns)
+        if colunas_faltantes:
+            raise ValueError(
+                f"Colunas ausentes na Bronze: {sorted(colunas_faltantes)}"
+            )
+
+        return df.select(
+            [F.col(nome).cast(tipo).alias(nome) for nome, tipo in self.SCHEMA_SILVER.items()]
+        )
+
     def transform(self, df: DataFrame, dt_load_sot: datetime, id_execucao: str) -> DataFrame:
         """
         Aplica as transformações da camada Silver.
 
         Args:
             df (DataFrame): Dados lidos da camada Bronze.
+            dt_load_sot (datetime): Data e hora da carga Silver.
+            id_execucao (str): Identificador da execução do job.
 
         Returns:
             DataFrame: Dados transformados para a camada Silver.
@@ -65,6 +114,7 @@ class SotTransform:
         df = (
             df.withColumn("tipo_contrato", F.trim(F.upper(F.col("tipo_contrato"))))
             .withColumn("tipo_lancamento", F.trim(F.upper(F.col("tipo_lancamento"))))
+            .withColumn("tipo_produto", F.trim(F.upper(F.col("tipo_produto"))))
             .withColumn("cod_cosif", F.trim(F.upper(F.col("cod_cosif"))))
         )
 
@@ -87,16 +137,48 @@ class SotTransform:
                 "dias_ate_processamento",
                 F.datediff(F.col("dt_processamento"), F.to_date(F.col("dt_lancamento"))),
             )
-            .withColumn("dt_load_sot", F.lit(dt_load_sot).cast("timestamp"))
+        )
+
+        df = self.calcular_valor_assinado(df)
+        return self.adicionar_auditoria(df, dt_load_sot, id_execucao)
+
+    def adicionar_auditoria(self, df: DataFrame, dt_load_sot: datetime, id_execucao: str) -> DataFrame:
+        """
+        Acrescenta `dt_load_sot` e `id_execucao`, usados nas tabelas da Silver e na quarentena.
+
+        Args:
+            df (DataFrame): Dados a gravar.
+            dt_load_sot (datetime): Data e hora da carga Silver.
+            id_execucao (str): Identificador da execução do job.
+        """
+        return (
+            df.withColumn("dt_load_sot", F.lit(dt_load_sot).cast("timestamp"))
             .withColumn("id_execucao", F.lit(id_execucao))
         )
 
-        return self.calcular_valor_assinado(df)
+    @staticmethod
+    def ordenar_como_tabela(df: DataFrame, colunas_tabela: list[str]) -> DataFrame:
+        """
+        Reordena as colunas do DataFrame na ordem da tabela, com as colunas novas no fim.
+
+        O Iceberg recusa gravar quando a ordem das colunas difere da tabela, mesmo com
+        evolução de schema; isso acontece quando a origem muda a posição de uma coluna
+        ou acrescenta uma coluna no meio.
+
+        Args:
+            df: Dados a gravar.
+            colunas_tabela: Colunas da tabela existente, na ordem dela.
+        """
+        existentes = [c for c in colunas_tabela if c in df.columns]
+        novas = [c for c in df.columns if c not in colunas_tabela]
+        return df.select(existentes + novas)
 
     def gravar_tabela_iceberg(self, df: DataFrame, tabela_destino: str, versao: str) -> None:
         """
         Cria a tabela Iceberg particionada por `dt_processamento` ou, se ela já existir,
         substitui as partições presentes no DataFrame.
+
+        A tabela aceita evolução de schema: colunas novas são acrescentadas à tabela.
 
         Args:
             df (DataFrame): Dados a serem gravados.
@@ -116,6 +198,7 @@ class SotTransform:
                 df.writeTo(tabela_destino)
                 .using("iceberg")
                 .tableProperty("format-version", versao)
+                .tableProperty("write.spark.accept-any-schema", "true")
                 .partitionedBy(self.COLUNA_PARTICAO)
                 .create()
             )
@@ -125,7 +208,13 @@ class SotTransform:
                 "partições presentes nos dados.",
                 tabela_destino,
             )
-            df.writeTo(tabela_destino).overwritePartitions()
+            # Garante a evolução de schema também em tabelas criadas antes dela.
+            self.spark.sql(
+                f"ALTER TABLE {tabela_destino} "
+                "SET TBLPROPERTIES ('write.spark.accept-any-schema' = 'true')"
+            )
+            df = self.ordenar_como_tabela(df, self.spark.table(tabela_destino).columns)
+            df.writeTo(tabela_destino).option("mergeSchema", "true").overwritePartitions()
 
     def separar_chaves_nulas(self, df: DataFrame) -> tuple[DataFrame, DataFrame]:
         """
@@ -153,6 +242,25 @@ class SotTransform:
 
         validos = df.filter(~alguma_invalida)
         rejeitados = df.filter(alguma_invalida).withColumn("motivo_rejeicao", motivo)
+        return validos, rejeitados
+
+    def separar_lancamento_invalido(self, df: DataFrame) -> tuple[DataFrame, DataFrame]:
+        """
+        Separa os registros cujo `tipo_lancamento` não está em `NATUREZA_LANCAMENTO`,
+        como os tipos antigos do gerador (TARIFA, IOF, JUROS). Sem essa separação,
+        eles ficariam com `valor_assinado` nulo e sumiriam dos saldos.
+
+        Returns:
+            (válidos, rejeitados); os rejeitados têm a coluna `motivo_rejeicao`.
+        """
+        tipo = F.trim(F.upper(F.col("tipo_lancamento")))
+        valido = F.coalesce(tipo.isin(*self.NATUREZA_LANCAMENTO), F.lit(False))
+
+        validos = df.filter(valido)
+        rejeitados = df.filter(~valido).withColumn(
+            "motivo_rejeicao",
+            F.concat(F.lit("tipo_lancamento inválido: "), F.coalesce(F.col("tipo_lancamento"), F.lit("nulo"))),
+        )
         return validos, rejeitados
 
     def separar_duplicatas(self, df: DataFrame) -> tuple[DataFrame, DataFrame]:
@@ -184,17 +292,13 @@ class SotTransform:
     def calcular_valor_assinado(self, df: DataFrame) -> DataFrame:
         """
         Cria `valor_assinado`: positivo para entrada de dinheiro na conta do
-        cliente e negativo para saída, já considerando o estorno.
+        cliente (CREDITO) e negativo para saída (DEBITO), já considerando o estorno.
+        Tipo de lançamento fora de `NATUREZA_LANCAMENTO` fica com valor nulo.
         """
-        lancamento = F.col("tipo_lancamento")
-        contrato = F.col("tipo_contrato")
-
-        sinal = F.when(
-            lancamento == "JUROS",
-            F.when(contrato.isin(*self.CONTRATOS_JUROS_CREDITADOS), F.lit(1)).otherwise(F.lit(-1)),
+        mapa_sinal = F.create_map(
+            *[F.lit(valor) for par in self.NATUREZA_LANCAMENTO.items() for valor in par]
         )
-        for tipo, valor_sinal in self.NATUREZA_LANCAMENTO.items():
-            sinal = sinal.when(lancamento == tipo, F.lit(valor_sinal))
+        sinal = mapa_sinal[F.col("tipo_lancamento")]
 
         estornado = F.coalesce(F.col("flag_estorno"), F.lit(False))
         fator = F.when(estornado, -sinal).otherwise(sinal)

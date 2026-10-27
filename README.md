@@ -201,6 +201,19 @@ Os registros são gravados em formato Parquet com compressão Zstandard, em um c
 <prefixo>/AAAA/MM/DD/HH/part-<uuid>.parquet
 ```
 
+### Histórico dos dados
+
+Os arquivos de `contratos/` gerados antes da versão atual do gerador (com os tipos `TARIFA`, `IOF` e `JUROS` e sem a coluna `tipo_produto`)
+foram convertidos para o formato atual em 27/10/2026 e reprocessados pela pipeline:
+
+- `tipo_lancamento`: `TARIFA` e `IOF` viraram `DEBITO`; `JUROS` virou `CREDITO` nos contratos `POUP`, `CDB` e `LCI` (rendimento) e `DEBITO`
+  nos demais, preservando o sinal que cada lançamento tinha.
+- `tipo_produto`: sorteado entre os produtos do lançamento cuja faixa contém o valor (ou a faixa mais próxima), com os pesos do gerador.
+- Os demais campos, inclusive os valores, não foram alterados. Por isso, o histórico mantém a distribuição de valores do gerador antigo,
+  com mais saídas que entradas, e os saldos desse período são majoritariamente negativos.
+
+Os arquivos originais, antes da conversão, estão em `s3://desafio-aws-contratos/contratos_legado/pre_tipo_produto/`, com os mesmos caminhos.
+
 ## 2.Bronze (sor)
 A camada Bronze é executada no `AWS Glue` que extrai os dados fictícios gerados na etapa anterior de bucket no `S3` e salva os dados no formato `Iceberg`
 no prefixo `bronze/` do bucket do data lake (`desafio-aws-datalake`) e no catalógo do glue, no database `bronze`. A execução é orquestrada pelo `AWS Step Functions`.
@@ -221,6 +234,8 @@ a sua criação). Para que nenhuma coluna seja perdida:
   nos registros dele. Sem essa opção, o Spark usaria o schema de um único arquivo e poderia descartar colunas sem aviso.
 - **Gravação**: as tabelas aceitam evolução de schema (propriedade `write.spark.accept-any-schema` e gravação com `mergeSchema`). Uma coluna nova
   na origem é acrescentada à tabela na próxima execução, sem necessidade de recriá-la. A propriedade também é aplicada às tabelas já existentes.
+- **Ordem das colunas**: antes de gravar em uma tabela existente, as colunas são reordenadas na ordem da tabela, com as colunas novas no fim
+  (método `ordenar_como_tabela`). Sem isso, o Iceberg recusa a gravação quando a origem muda a posição de uma coluna ou acrescenta uma coluna no meio.
 
 O código fica dividido em dois arquivos:
 
@@ -245,16 +260,37 @@ O código fica dividido em dois arquivos:
 ```
 
 ## 3.Silver (sot)
-A camada Silver é executada no `AWS Glue` e lê a tabela Iceberg `bronze.transacoes` pelo catálogo do Glue. Ela aplica as regras de qualidade, padroniza
-e enriquece os dados, e grava o resultado no formato `Iceberg` no prefixo `silver/` do bucket do data lake e no catálogo do glue, no database `silver`.
+A camada Silver é executada no `AWS Glue` e lê a tabela Iceberg `bronze.transacoes` pelo catálogo do Glue. Como a Bronze guarda os dados da forma que
+chegam, a Silver é a primeira camada com colunas e tipos definidos: ela aplica o schema, as regras de qualidade, padroniza e enriquece os dados, e
+grava o resultado no formato `Iceberg` no prefixo `silver/` do bucket do data lake e no catálogo do glue, no database `silver`.
 
 Assim como na Bronze, são gravadas duas tabelas particionadas por `dt_processamento`: `silver.transacoes` (Iceberg V3) e `silver.transacoes_alt` (Iceberg V2),
-esta última para leitura pelo Athena. Se a tabela já existir, apenas as partições presentes nos dados são substituídas.
+esta última para leitura pelo Athena. Se a tabela já existir, apenas as partições presentes nos dados são substituídas. As tabelas aceitam evolução de
+schema: colunas novas são acrescentadas na próxima execução, sem necessidade de recriá-las, e as colunas são gravadas na ordem da tabela
+existente, como na Bronze.
 
 O código fica dividido em dois arquivos:
 
 - `sot_job.py`: script do job, que lê os parâmetros, chama as regras e grava as tabelas.
 - `sot_transform.py`: classe `SotTransform` com as regras, sem dependência do `awsglue`, o que permite testá-las localmente com PySpark e pytest.
+
+### Schema
+
+Antes das regras de qualidade, a Silver seleciona da Bronze as colunas abaixo, nesta ordem, convertidas para os tipos esperados
+(atributo `SCHEMA_SILVER`). Colunas da Bronze fora desta lista não passam para a Silver; se faltar alguma coluna, o job falha com uma mensagem
+indicando as colunas ausentes.
+
+| Coluna | Tipo |
+|---|---|
+| `id_transacao`, `id_contrato`, `id_conta`, `cnpj`, `cod_agencia` | `string` |
+| `tipo_contrato`, `tipo_lancamento`, `tipo_produto` | `string` |
+| `valor_lancamento` | `decimal(18,2)` |
+| `dt_lancamento` | `timestamp` |
+| `dt_processamento` | `date` |
+| `cod_cosif`, `id_lote` | `string` |
+| `flag_estorno` | `boolean` |
+
+Se um arquivo de origem não tiver alguma coluna (por exemplo, `tipo_produto`), ela chega nula da Bronze.
 
 ### Regras de qualidade
 
@@ -262,15 +298,18 @@ As regras são aplicadas antes das transformações, nesta ordem:
 
 1. **Chaves obrigatórias**: registros com `id_transacao`, `id_conta`, `id_contrato` ou `dt_processamento` nulos (ou texto vazio) são separados, com o motivo
    da rejeição (ex.: `chave nula: id_conta, id_contrato`).
-2. **Duplicatas**: é mantido um registro por `id_transacao`, o de `dt_processamento` mais recente (desempate por `dt_lancamento` e `id_lote`); os demais são separados.
+2. **Tipo de lançamento**: registros com `tipo_lancamento` diferente de `CREDITO` e `DEBITO` são separados (ex.: `tipo_lancamento inválido: JUROS`).
+   Os tipos antigos `TARIFA`, `IOF` e `JUROS` já foram convertidos na origem (veja "Histórico dos dados"); a regra protege contra novos casos.
+3. **Duplicatas**: é mantido um registro por `id_transacao`, o de `dt_processamento` mais recente (desempate por `dt_lancamento` e `id_lote`); os demais são separados.
 
-Os registros rejeitados são gravados em tabela Iceberg V2 para fins de auditoria.
+Os registros separados são gravados na tabela `silver.transacoes_rejeitadas` (Iceberg V2), com a coluna `motivo_rejeicao` e as colunas de auditoria
+`dt_load_sot` e `id_execucao`, que permitem saber em qual execução cada registro foi rejeitado.
 
 ### Transformações
 
 | Coluna | Regra |
 |---|---|
-| `tipo_contrato`, `tipo_lancamento`, `cod_cosif` | Padronizados com `trim` e letras maiúsculas. |
+| `tipo_contrato`, `tipo_lancamento`, `tipo_produto`, `cod_cosif` | Padronizados com `trim` e letras maiúsculas. |
 | `categoria_produto` | `CC` e `POUP` → `CONTA`; `CDB` e `LCI` → `INVESTIMENTO`; `SEGURO` e `CONSORCIO` mantêm o nome. Contrato não mapeado fica nulo. |
 | `ano_mes` | Mês do lançamento no horário de Brasília (`America/Sao_Paulo`), no formato `AAAA-MM`. |
 | `dias_ate_processamento` | Dias entre a data do lançamento e `dt_processamento` (ambos em UTC). |
@@ -278,10 +317,9 @@ Os registros rejeitados são gravados em tabela Iceberg V2 para fins de auditori
 | `dt_load_sot` | Data e hora (UTC) da carga Silver; o mesmo valor para todas as linhas e tabelas de uma execução. |
 | `id_execucao` | `JOB_RUN_ID` da execução do Glue que gravou a linha. |
 
-O sinal de `valor_assinado` segue a natureza do lançamento:
+O sinal de `valor_assinado` segue a natureza do lançamento (atributo `NATUREZA_LANCAMENTO`):
 
-- `CREDITO` é positivo; `DEBITO`, `TARIFA` e `IOF` são negativos.
-- `JUROS` é positivo nos contratos em que é rendimento pago ao cliente (`POUP`, `CDB`, `LCI`) e negativo nos demais (`CC`, `CONSORCIO`, `SEGURO`).
+- `CREDITO` é positivo e `DEBITO` é negativo.
 - Quando `flag_estorno` é verdadeiro, o sinal é invertido (ex.: um débito estornado devolve o dinheiro ao cliente).
 
 ### Parâmetros do job Glue
