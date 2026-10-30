@@ -17,6 +17,7 @@ class SaldoContaContrato(SpecTransform):
     a data mais recente da base, inclusive nos dias sem movimento (o saldo do dia
     anterior se mantém). O saldo é a soma acumulada do `valor_assinado` da Silver;
     como a origem não informa saldo inicial, todo contrato começa com saldo zero.
+    O `saldo_mes` é a mesma soma, acumulada apenas desde o primeiro dia do mês.
 
     A view é recalculada por completo a cada execução, porque a Silver recebe
     lançamentos com atraso que alteram saldos de dias anteriores.
@@ -38,7 +39,7 @@ class SaldoContaContrato(SpecTransform):
 
         Returns:
             DataFrame: Uma linha por contrato e `data_saldo`, com o movimento do
-            dia, a quantidade de lançamentos e o saldo acumulado.
+            dia, a quantidade de lançamentos, o saldo acumulado e o saldo do mês.
         """
         movimentos = (
             df.filter(F.col("tipo_contrato") == self.TIPO_CONTRATO)
@@ -72,6 +73,12 @@ class SaldoContaContrato(SpecTransform):
             .orderBy("data_saldo")
             .rowsBetween(Window.unboundedPreceding, Window.currentRow)
         )
+        # Igual ao acumulado, mas reinicia no primeiro dia de cada mês.
+        acumulado_mes = (
+            Window.partitionBy("id_contrato", F.trunc("data_saldo", "month"))
+            .orderBy("data_saldo")
+            .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+        )
 
         return (
             calendario.join(movimentos, [*self.CHAVES_CONTRATO, "data_saldo"], "left")
@@ -84,11 +91,16 @@ class SaldoContaContrato(SpecTransform):
                 "saldo",
                 F.sum("movimento_dia").over(acumulado).cast(DecimalType(18, 2)),
             )
+            .withColumn(
+                "saldo_mes",
+                F.sum("movimento_dia").over(acumulado_mes).cast(DecimalType(18, 2)),
+            )
             .select(
                 "data_saldo",
                 *self.CHAVES_CONTRATO,
                 "movimento_dia",
                 "qtd_lancamentos",
                 "saldo",
+                "saldo_mes",
             )
         )

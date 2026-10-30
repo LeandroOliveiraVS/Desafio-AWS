@@ -63,6 +63,15 @@ def test_gravar_falha_sem_coluna_de_particao(spark):
         view.gravar_tabela_iceberg(df, "glue_catalog.gold.teste", "2")
 
 
+def test_ordenar_como_tabela_segue_a_tabela_e_poe_colunas_novas_no_fim(spark):
+    df = spark.createDataFrame([("c-1", "10.00", "5.00", "2026-10-01")], ["id_contrato", "saldo_mes", "saldo", "data_saldo"])
+
+    resultado = SpecTransform.ordenar_como_tabela(df, ["data_saldo", "id_contrato", "saldo"])
+
+    assert resultado.columns == ["data_saldo", "id_contrato", "saldo", "saldo_mes"]
+    assert resultado.first()["saldo"] == "5.00"
+
+
 def test_carregar_business_view(spark, pacote_views):
     pacote_views(
         "resumo",

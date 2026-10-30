@@ -374,7 +374,8 @@ A camada Gold é executada no `AWS Glue` e gera as **business views**: tabelas p
 O resultado é gravado no formato `Iceberg` no prefixo `gold/` do bucket do data lake e no catálogo do glue, no database `gold`.
 
 Cada business view gera duas tabelas com o nome da view: `gold.<view>` (Iceberg V3) e `gold.<view>_alt` (Iceberg V2), esta última para
-leitura pelo Athena.
+leitura pelo Athena. As tabelas aceitam evolução de schema: uma coluna nova na view é acrescentada às tabelas na próxima execução, sem
+necessidade de recriá-las, e as colunas são gravadas na ordem da tabela existente, como na Bronze.
 
 ### Estrutura das business views
 
@@ -415,6 +416,7 @@ Saldo diário consolidado da conta corrente (`tipo_contrato = CC`) por contrato,
 | `movimento_dia` | Soma do `valor_assinado` dos lançamentos do dia (0 nos dias sem movimento). |
 | `qtd_lancamentos` | Quantidade de lançamentos do dia. |
 | `saldo` | Saldo acumulado do contrato até o dia. |
+| `saldo_mes` | Saldo do mês: soma do `movimento_dia` desde o primeiro dia do mês até o dia; reinicia a cada mês. |
 
 - Cada contrato tem uma linha por dia, do primeiro lançamento até a data mais recente da base, inclusive nos dias sem movimento,
   em que o saldo do dia anterior se mantém.

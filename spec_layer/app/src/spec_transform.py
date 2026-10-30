@@ -68,10 +68,28 @@ class SpecTransform(ABC):
             DataFrame: Dados da business view, contendo as `COLUNAS_PARTICAO`.
         """
 
+    @staticmethod
+    def ordenar_como_tabela(df: DataFrame, colunas_tabela: list[str]) -> DataFrame:
+        """
+        Reordena as colunas do DataFrame na ordem da tabela, com as colunas novas no fim.
+
+        O Iceberg recusa gravar quando a ordem das colunas difere da tabela, mesmo com
+        evolução de schema.
+
+        Args:
+            df: Dados a gravar.
+            colunas_tabela: Colunas da tabela existente, na ordem dela.
+        """
+        existentes = [c for c in colunas_tabela if c in df.columns]
+        novas = [c for c in df.columns if c not in colunas_tabela]
+        return df.select(existentes + novas)
+
     def gravar_tabela_iceberg(self, df: DataFrame, tabela_destino: str, versao: str) -> None:
         """
         Cria a tabela Iceberg particionada por `COLUNAS_PARTICAO` ou, se ela já existir,
         substitui as partições presentes no DataFrame.
+
+        A tabela aceita evolução de schema: colunas novas são acrescentadas à tabela.
 
         Args:
             df (DataFrame): Dados a serem gravados.
@@ -100,6 +118,7 @@ class SpecTransform(ABC):
                 df.writeTo(tabela_destino)
                 .using("iceberg")
                 .tableProperty("format-version", versao)
+                .tableProperty("write.spark.accept-any-schema", "true")
             )
             if self.COLUNAS_PARTICAO:
                 writer = writer.partitionedBy(*self.COLUNAS_PARTICAO)
@@ -110,7 +129,13 @@ class SpecTransform(ABC):
                 "partições presentes nos dados.",
                 tabela_destino,
             )
-            df.writeTo(tabela_destino).overwritePartitions()
+            # Garante a evolução de schema também em tabelas criadas antes dela.
+            self.spark.sql(
+                f"ALTER TABLE {tabela_destino} "
+                "SET TBLPROPERTIES ('write.spark.accept-any-schema' = 'true')"
+            )
+            df = self.ordenar_como_tabela(df, self.spark.table(tabela_destino).columns)
+            df.writeTo(tabela_destino).option("mergeSchema", "true").overwritePartitions()
 
 
 def carregar_business_view(

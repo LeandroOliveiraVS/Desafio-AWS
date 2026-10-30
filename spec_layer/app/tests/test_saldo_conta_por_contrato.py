@@ -60,6 +60,25 @@ def test_todo_contrato_vai_ate_a_data_mais_recente_da_base(view, spark):
     ]
 
 
+def test_saldo_mes_reinicia_no_primeiro_dia_do_mes(view, spark):
+    df = spark.createDataFrame([
+        lancamento("c-1", "100.00", utc(2026, 9, 29)),
+        lancamento("c-1", "-30.00", utc(2026, 9, 30)),
+        lancamento("c-1", "50.00", utc(2026, 10, 1)),
+        lancamento("c-1", "-20.00", utc(2026, 10, 3)),
+    ], SCHEMA_SILVER)
+
+    resultado = view.create_business_view(df).orderBy("data_saldo").collect()
+
+    assert [(r.data_saldo, r.saldo_mes, r.saldo) for r in resultado] == [
+        (date(2026, 9, 29), Decimal("100.00"), Decimal("100.00")),
+        (date(2026, 9, 30), Decimal("70.00"), Decimal("70.00")),
+        (date(2026, 10, 1), Decimal("50.00"), Decimal("120.00")),  # novo mês
+        (date(2026, 10, 2), Decimal("50.00"), Decimal("120.00")),  # sem movimento
+        (date(2026, 10, 3), Decimal("30.00"), Decimal("100.00")),
+    ]
+
+
 def test_considera_apenas_conta_corrente(view, spark):
     resultado = saldos(view, spark, [
         lancamento("c-1", "10.00", utc(2026, 10, 1)),
